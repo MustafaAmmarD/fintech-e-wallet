@@ -1,0 +1,28 @@
+# ─── Development Profile ─────────────────────────────────────
+# Uses PostgreSQL via Docker Compose (auto-started by Spring Boot)
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ewallet_dev
+    username: ewallet
+    password: ewallet_dev_password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate # Flyway manages schema
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  docker:
+    compose:
+      enabled: true
+      lifecycle-management: start_and_stop
+
+logging:
+  level:
+    com.fintech.ewallet: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE

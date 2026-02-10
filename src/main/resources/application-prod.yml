@@ -1,0 +1,32 @@
+# ─── Production Profile ──────────────────────────────────────
+# All sensitive values MUST come from environment variables.
+
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  docker:
+    compose:
+      enabled: false
+
+jwt:
+  secret: ${JWT_SECRET}
+
+logging:
+  level:
+    com.fintech.ewallet: INFO
+    org.springframework.security: WARN
+
+management:
+  endpoint:
+    health:
+      show-details: when_authorized

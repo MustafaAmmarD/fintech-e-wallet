@@ -1,0 +1,6 @@
+-- =============================================================
+-- V1: Initial schema placeholder
+-- =============================================================
+-- This migration establishes the Flyway baseline.
+-- The actual users table will be added in Phase 1.2.
+-- =============================================================
