@@ -9,8 +9,8 @@
 
 | Step | Title                      | Scope                                         | Status        |
 | ---- | -------------------------- | --------------------------------------------- | ------------- |
-| 1.1  | Project Setup              | pom.xml, package structure, profiles, configs | 🟡 Discussion |
-| 1.2  | User & Identity Management | User entity, registration, login              | ⬜ Pending    |
+| 1.1  | Project Setup              | pom.xml, package structure, profiles, configs | ✅ Done       |
+| 1.2  | User & Identity Management | User entity, registration, login              | 🟡 Discussion |
 | 1.3  | JWT Authentication         | Token generation, refresh, validation         | ⬜ Pending    |
 | 1.4  | Device Binding & Security  | Trusted devices, fingerprinting               | ⬜ Pending    |
 | 1.5  | KYC Verification           | Document upload, admin review                 | ⬜ Pending    |
@@ -284,10 +284,289 @@ public class SecurityConfig {
 
 Before I implement anything, I'd like your input on these decisions:
 
-1. **YAML or Properties** for configuration files?
-2. **H2 in-memory** or **PostgreSQL via Docker** for local development?
-3. **Strict hexagonal** (separate JPA entities from domain entities) or **pragmatic** (JPA annotations on domain classes)?
-4. **Error codes**: string (`VALIDATION_FAILED`) or numeric (`1001`)?
-5. **Arabic error messages** from the start, or add later?
-6. **Package naming**: `identity` vs `auth` vs `user`?
-7. **Any additional dependencies** you want (MapStruct, SpringDoc/Swagger, etc.)?
+1. **YAML or Properties** for configuration files? → **YAML** ✅
+2. **H2 in-memory** or **PostgreSQL via Docker** for local development? → **PostgreSQL Docker** ✅
+3. **Strict hexagonal** (separate JPA entities from domain entities) or **pragmatic** (JPA annotations on domain classes)? → **Strict hexagonal** ✅
+4. **Error codes**: string (`VALIDATION_FAILED`) or numeric (`1001`)? → **String** ✅
+5. **Arabic error messages** from the start, or add later? → **Add later** ✅
+6. **Package naming**: `identity` vs `auth` vs `user`? → **`identity`** ✅
+7. **Any additional dependencies**? → **MapStruct, SpringDoc, Testcontainers, Docker Compose** ✅
+
+---
+
+## 1.2 User & Identity Management — Discussion
+
+> [!NOTE]
+> Phase 1.2 focuses on the **User domain entity**, **registration**, and **login**. JWT tokens are generated here but the full JWT security filter chain is Phase 1.3.
+
+### Architecture Layers (Strict Hexagonal)
+
+Since you chose **strict hexagonal**, every entity will have this separation:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  DOMAIN LAYER (pure Java — NO Spring annotations)          │
+│  ┌─────────────┐  ┌──────────────────┐                     │
+│  │ User.java   │  │ UserRepository   │ ← interface (port)  │
+│  │ (plain POJO)│  │ (interface only) │                     │
+│  └─────────────┘  └──────────────────┘                     │
+├─────────────────────────────────────────────────────────────┤
+│  APPLICATION LAYER (orchestration — use cases)             │
+│  ┌────────────────────┐  ┌─────────────────┐               │
+│  │ RegisterUserUseCase│  │ LoginUseCase    │               │
+│  │ (@Service)         │  │ (@Service)      │               │
+│  └────────────────────┘  └─────────────────┘               │
+│  ┌────────────────────┐  ┌─────────────────┐               │
+│  │ RegisterRequest    │  │ LoginResponse   │ ← DTOs        │
+│  │ (record)           │  │ (record)        │               │
+│  └────────────────────┘  └─────────────────┘               │
+├─────────────────────────────────────────────────────────────┤
+│  INFRASTRUCTURE LAYER (framework — adapters)               │
+│  ┌────────────────────┐  ┌─────────────────────┐           │
+│  │ UserJpaEntity.java │  │ UserJpaRepository   │           │
+│  │ (@Entity, @Table)  │  │ (Spring Data JPA)   │           │
+│  └────────────────────┘  └─────────────────────┘           │
+│  ┌────────────────────┐                                    │
+│  │ UserMapper.java    │ ← MapStruct (domain ↔ JPA entity) │
+│  └────────────────────┘                                    │
+├─────────────────────────────────────────────────────────────┤
+│  API LAYER (REST controllers)                              │
+│  ┌────────────────────┐                                    │
+│  │ AuthController.java│ → calls use cases, returns DTOs    │
+│  └────────────────────┘                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 1.2.1 — Domain Entity: `User.java`
+
+Pure Java POJO — no JPA, no Spring, no Lombok. Business logic lives here.
+
+**Proposed fields:**
+
+| Field           | Type                 | Purpose                                   |
+| --------------- | -------------------- | ----------------------------------------- |
+| `id`            | `UUID`               | Primary key (generated)                   |
+| `phoneNumber`   | `String`             | International format (+967...)            |
+| `countryCode`   | `String`             | ISO 3166-1 ("YE", "SA")                   |
+| `fullName`      | `String`             | User's display name                       |
+| `passwordHash`  | `String`             | BCrypt hash (never plain text)            |
+| `email`         | `String`             | Optional, for recovery                    |
+| `kycStatus`     | `KycStatus` enum     | `NONE`, `PENDING`, `VERIFIED`, `REJECTED` |
+| `accountStatus` | `AccountStatus` enum | `ACTIVE`, `SUSPENDED`, `CLOSED`           |
+| `language`      | `String`             | `"ar"` or `"en"` (default `"ar"`)         |
+| `referralCode`  | `String`             | Unique code for referral program          |
+| `createdAt`     | `Instant`            | Registration timestamp                    |
+| `updatedAt`     | `Instant`            | Last profile update                       |
+
+> [!IMPORTANT]
+> **Discussion Points:**
+>
+> 1. **Phone number format**: Store as `+967XXXXXXXXX` (E.164 international)? Or separate `countryCode` + `localNumber`?
+> 2. **Email**: Required or optional? Some Yemeni users may not have email.
+> 3. **Default language**: `"ar"` (Arabic) or let the client send it?
+> 4. **Referral code**: Generate on registration, or add in a later phase?
+
+---
+
+### 1.2.2 — JPA Entity: `UserJpaEntity.java`
+
+This lives in `infrastructure/persistence/` and has all the JPA annotations. MapStruct maps between `User` ↔ `UserJpaEntity`.
+
+**Proposed database table:**
+
+```sql
+CREATE TABLE users (
+    id              UUID PRIMARY KEY,
+    phone_number    VARCHAR(20) NOT NULL UNIQUE,
+    country_code    VARCHAR(3)  NOT NULL,
+    full_name       VARCHAR(100) NOT NULL,
+    password_hash   VARCHAR(255) NOT NULL,
+    email           VARCHAR(255),
+    kyc_status      VARCHAR(20) NOT NULL DEFAULT 'NONE',
+    account_status  VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    language        VARCHAR(5)  NOT NULL DEFAULT 'ar',
+    referral_code   VARCHAR(20) UNIQUE,
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_phone ON users(phone_number);
+CREATE INDEX idx_users_referral ON users(referral_code);
+```
+
+> [!IMPORTANT]
+> **Discussion Points:** 5. **Enum storage**: Store enums as `VARCHAR` (readable in DB) or `SMALLINT` (compact)? 6. **Soft delete**: Should we add a `deleted_at` column for soft deletes, or hard-delete users?
+
+---
+
+### 1.2.3 — Repository Port: `UserRepository.java`
+
+Domain interface (port) — no Spring annotations.
+
+```java
+public interface UserRepository {
+    User save(User user);
+    Optional<User> findById(UUID id);
+    Optional<User> findByPhoneNumber(String phoneNumber);
+    boolean existsByPhoneNumber(String phoneNumber);
+}
+```
+
+The **adapter** (`UserRepositoryAdapter.java`) in infrastructure will implement this using Spring Data JPA + MapStruct.
+
+---
+
+### 1.2.4 — Registration Use Case
+
+**Flow:**
+
+```
+Client POST /api/v1/auth/register
+        │
+        ▼
+┌─ AuthController ─────────────────────────┐
+│  Validates @Valid RegisterRequest        │
+│  Calls RegisterUserUseCase.execute()     │
+└──────────│───────────────────────────────┘
+           ▼
+┌─ RegisterUserUseCase ────────────────────┐
+│  1. Check phone not already registered   │
+│  2. Validate phone format                │
+│  3. Hash password with BCrypt(12)        │
+│  4. Generate referral code               │
+│  5. Create User domain object            │
+│  6. Save via UserRepository port         │
+│  7. Return RegisterResponse (no token)   │
+└──────────────────────────────────────────┘
+```
+
+**Register Request DTO:**
+
+```java
+public record RegisterRequest(
+    @NotBlank String phoneNumber,
+    @NotBlank @Size(min = 8, max = 50) String password,
+    @NotBlank String fullName,
+    String countryCode,  // defaults to "YE"
+    String email,        // optional
+    String language      // defaults to "ar"
+) {}
+```
+
+**Register Response DTO:**
+
+```java
+public record RegisterResponse(
+    UUID userId,
+    String phoneNumber,
+    String fullName,
+    String referralCode,
+    String message
+) {}
+```
+
+> [!NOTE]
+> Registration does NOT return a JWT token. The user must login separately after registering. This is a deliberate security choice.
+
+---
+
+### 1.2.5 — Login Use Case
+
+**Flow:**
+
+```
+Client POST /api/v1/auth/login
+        │
+        ▼
+┌─ AuthController ─────────────────────────┐
+│  Validates @Valid LoginRequest           │
+│  Calls LoginUseCase.execute()            │
+└──────────│───────────────────────────────┘
+           ▼
+┌─ LoginUseCase ───────────────────────────┐
+│  1. Find user by phone number            │
+│  2. Verify password with BCrypt.matches  │
+│  3. Check account is ACTIVE              │
+│  4. Generate JWT access token (1hr)      │
+│  5. Generate JWT refresh token (7 days)  │
+│  6. Return LoginResponse with tokens     │
+└──────────────────────────────────────────┘
+```
+
+**Login Request DTO:**
+
+```java
+public record LoginRequest(
+    @NotBlank String phoneNumber,
+    @NotBlank String password
+) {}
+```
+
+**Login Response DTO:**
+
+```java
+public record LoginResponse(
+    String accessToken,
+    String refreshToken,
+    long expiresIn,
+    UserInfo user
+) {
+    public record UserInfo(
+        UUID id,
+        String fullName,
+        String phoneNumber,
+        String kycStatus
+    ) {}
+}
+```
+
+---
+
+### 1.2.6 — API Endpoints
+
+| Endpoint                | Method | Auth Required | Description           |
+| ----------------------- | ------ | ------------- | --------------------- |
+| `/api/v1/auth/register` | POST   | No            | Register new user     |
+| `/api/v1/auth/login`    | POST   | No            | Login, get JWT tokens |
+
+> [!NOTE]
+> Refresh token and logout endpoints will be added in **Phase 1.3** (JWT Authentication) since they need the full JWT filter chain.
+
+---
+
+### 1.2.7 — Files to Create
+
+| File                              | Layer          | Package                               |
+| --------------------------------- | -------------- | ------------------------------------- |
+| `User.java`                       | Domain         | `identity.domain`                     |
+| `KycStatus.java` (enum)           | Domain         | `identity.domain`                     |
+| `AccountStatus.java` (enum)       | Domain         | `identity.domain`                     |
+| `UserRepository.java` (interface) | Domain         | `identity.domain`                     |
+| `RegisterUserUseCase.java`        | Application    | `identity.application`                |
+| `LoginUseCase.java`               | Application    | `identity.application`                |
+| `RegisterRequest.java` (record)   | Application    | `identity.application.dto`            |
+| `RegisterResponse.java` (record)  | Application    | `identity.application.dto`            |
+| `LoginRequest.java` (record)      | Application    | `identity.application.dto`            |
+| `LoginResponse.java` (record)     | Application    | `identity.application.dto`            |
+| `UserJpaEntity.java`              | Infrastructure | `identity.infrastructure.persistence` |
+| `UserJpaRepository.java`          | Infrastructure | `identity.infrastructure.persistence` |
+| `UserRepositoryAdapter.java`      | Infrastructure | `identity.infrastructure.persistence` |
+| `UserMapper.java` (MapStruct)     | Infrastructure | `identity.infrastructure.persistence` |
+| `JwtTokenProvider.java`           | Infrastructure | `identity.infrastructure.security`    |
+| `AuthController.java`             | API            | `identity.api`                        |
+| `V2__create_users_table.sql`      | Migration      | `db/migration`                        |
+
+---
+
+## Questions for You (Phase 1.2)
+
+1. **Phone format**: Store as `+967XXXXXXXXX` (single field) or separate `countryCode` + `localNumber`?
+2. **Email**: Required or optional at registration?
+3. **Default language**: `"ar"` (Arabic) as default?
+4. **Referral code**: Generate now or later?
+5. **Enum storage in DB**: `VARCHAR` (readable) or integer codes?
+6. **Soft delete**: Add `deleted_at` column, or hard-delete?
+7. **Registration → auto-login?** Return tokens on register, or require separate login?
+8. **Anything else** you want on the User entity?
