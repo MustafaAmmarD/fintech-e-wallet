@@ -986,406 +986,337 @@ Jwts.builder()
 5. **Device Naming**: Auto-generate from User-Agent ("Chrome on Windows") or require user input?
 6. **Primary Device**: Should the first device be "primary" and receive special treatment (e.g., can't be revoked without re-authentication)?
 
+
 ---
 
 ## 1.5 KYC Verification  Discussion
 
 > [!NOTE]
-> Phase 1.5 implements **Know Your Customer (KYC)** verification to comply with financial regulations and prevent fraud before users can perform wallet operations.
+> Phase 1.5 implements **Know Your Customer (KYC)** verification  a legal requirement for fintech apps. Users must upload identity documents (passport, national ID) before they can create wallets or transfer money.
 
 ### Why KYC Matters
 
-**Legal Requirement**: Most countries require financial service providers to verify customer identities to prevent:
-- Money laundering
-- Terrorist financing
-- Identity theft
-- Fraud
+**The Regulatory Reality:**
 
-**User Trust**: KYC verification builds trust by ensuring all users are legitimate.
+Every country with anti-money laundering (AML) laws requires fintech companies to:
+1. **Verify user identities** before allowing financial transactions
+2. **Keep records** of identity documents for 5-10 years
+3. **Report suspicious activity** to financial authorities
+4. **Block** users who fail verification
 
-**Risk Management**: Helps detect and prevent suspicious activities early.
+**Without KYC:**
+- Your app can be **shut down** by regulators
+- You face **fines** (millions of dollars in some countries)
+- Banks won't partner with you for cash-out services
+- Payment processors (Stripe, PayPal) will reject you
+
+**With KYC:**
+-  Compliant with regulations
+-  Can operate legally in most countries
+-  Partner with banks and payment processors
+-  Build user trust (legitimate users only)
+-  Reduce fraud (harder to use stolen accounts)
 
 ---
 
-### 1.5.1  KYC Workflow
+### 1.5.1  The KYC Journey
 
-``mermaid
-sequenceDiagram
-    participant User
-    participant App
-    participant FileStorage
-    participant Database
-    participant Admin
+**User Perspective:**
 
-    User->>App: Register & Login
-    Note over User,App: Account created with KYC_STATUS = NONE
-    
-    User->>App: Upload KYC Document (passport/ID)
-    App->>App: Validate file (size, type)
-    App->>FileStorage: Store file (./uploads/kyc/{userId}/)
-    App->>Database: Create kyc_documents record (status=PENDING)
-    App->>Database: Update user.kyc_status = PENDING
-    App->>User: Document uploaded successfully
-    
-    Admin->>App: Review KYC documents
-    Admin->>Database: Approve or Reject
-    Database->>Database: Update user.kyc_status = VERIFIED/REJECTED
-    App->>User: Notification (email/SMS)
-    
-    User->>App: Attempt wallet operation
-    App->>App: Check if kyc_status = VERIFIED
-    alt KYC Verified
-        App->>User: Allow operation
-    else KYC Not Verified
-        App->>User: Error: KYC verification required
-    end
+1. **Registration**  User creates account (email, phone, password)
+2. **Try to create wallet**  Blocked! ""Please complete KYC verification""
+3. **Upload document**  Takes photo of passport or national ID
+4. **Wait for review**  Admin reviews document (manual or AI)
+5. **Approved**  Can now create wallet and transfer money
+6. **OR Rejected**  ""Your passport image is blurry, please re-upload""
+
+**Key Insight:** KYC is a **gate**  users can register and login, but can't do financial operations until verified.
+
+---
+
+### 1.5.2  Document Types
+
+We accept 4 types of government-issued ID:
+
+| Document Type | Why It's Accepted | Why It's NOT Accepted |
+|---------------|-------------------|----------------------|
+| **Passport** | Universal, hard to forge, has photo | Expensive to obtain |
+| **National ID** | Common in most countries | Some countries don't issue them |
+| **Driver's License** | Widely available | Easier to forge than passport |
+| **Residence Permit** | For non-citizens | Not accepted as primary ID in some countries |
+
+**Design Decision:** Accept all 4, but **prefer passport** as it's the most trusted globally.
+
+**Rejected Documents:**
+-  Student ID (not government-issued)
+-  Work badge (can be faked)
+-  Birth certificate (no photo)
+-  Utility bill (used for address verification, not ID)
+
+---
+
+### 1.5.3  File Storage: Local vs Cloud
+
+**The Problem:** KYC documents are:
+- **Large** (photos are 2-5 MB each)
+- **Sensitive** (contain personal information)
+- **Long-lived** (must keep for 5-10 years by law)
+
+**Development:** Store locally in ./uploads/kyc/{userId}/
+-  Fast for testing
+-  No AWS bill
+-  Files lost if server crashes
+-  Not scalable (disk fills up)
+
+**Production:** Use cloud storage (S3, Azure Blob, GCS)
+-  Durable (99.999999999% durability)
+-  Scalable (unlimited storage)
+-  Encrypted at rest
+-  Access logging for compliance
+-  Costs money (.023 per GB/month on S3)
+
+**Why Abstract Storage?** We use a FileStorageService interface:
+- Development  LocalFileStorageService saves to disk
+- Production  S3FileStorageService saves to AWS S3
+- Domain code doesn't care which implementation is used
+
+This is **Hexagonal Architecture**  infrastructure is pluggable.
+
+---
+
+### 1.5.4  Security: What Could Go Wrong?
+
+**Threat 1: Malicious File Upload**
+
+Attacker uploads a virus disguised as passport.jpg:
+-  **Mitigation:** Check MIME type (only allow image/jpeg, image/png, application/pdf)
+-  **Mitigation:** Limit file size to 5MB (prevent DoS)
+-  **TODO:** Integrate virus scanner (ClamAV) in production
+
+**Threat 2: Stolen Document**
+
+Hacker steals someone's passport scan, uploads it to create fake account:
+-  **Mitigation:** Require selfie verification (future phase)
+-  **Mitigation:** Admin compares selfie to passport photo
+-  **TODO:** Integrate AI verification (Onfido, Jumio)
+
+**Threat 3: Data Breach**
+
+Database hacked, attacker downloads all passport scans:
+-  **Mitigation:** Encrypt files at rest (S3 SSE, AES-256)
+-  **Mitigation:** Encrypt database connections (SSL/TLS)
+-  **Mitigation:** Don't expose file URLs publicly (use pre-signed URLs)
+-  **Mitigation:** Log all file access for audit trail
+
+---
+
+### 1.5.5  The KYC Status State Machine
+
+``
+NONE  User hasn't uploaded documents yet
+  
+PENDING  User uploaded, waiting for admin review
+  
+VERIFIED  Admin approved 
+REJECTED  Admin rejected  (can re-upload)
 ``
 
-**States:**
-- NONE  User hasn't uploaded any documents
-- PENDING  Documents uploaded, awaiting admin review
-- VERIFIED  Admin approved the documents
-- REJECTED  Admin rejected the documents
+**State Transitions:**
+
+| From | To | Trigger | Who Can Do It |
+|------|-----|---------|---------------|
+| NONE | PENDING | Upload document | User |
+| PENDING | VERIFIED | Approve | Admin only |
+| PENDING | REJECTED | Reject | Admin only |
+| REJECTED | PENDING | Re-upload | User |
+| VERIFIED | REJECTED | Fraudulent doc discovered | Admin only |
+
+**Business Rule:** Once VERIFIED, users can't go back to NONE. Even if rejected later, they stay in the system (for audit trail).
 
 ---
 
-### 1.5.2  Domain Model
+### 1.5.6  Admin Review: Manual vs Automated
 
-**KycDocument Entity:**
+**Option 1: Manual Review (What We Built)**
 
-``java
-public class KycDocument {
-    private UUID id;
-    private UUID userId;
-    private DocumentType documentType;  // PASSPORT, NATIONAL_ID, etc.
-    private String filePath;            // ./uploads/kyc/{userId}/{uuid}_filename.jpg
-    private String fileName;            // Original filename
-    private String mimeType;            // image/jpeg, application/pdf
-    private Long fileSize;              // bytes
-    private KycStatus status;           // PENDING, VERIFIED, REJECTED
-    private String rejectionReason;     // Admin's reason for rejection
-    private Instant uploadedAt;
-    private Instant reviewedAt;
-    private UUID reviewedBy;            // Admin user ID
-    
-    // Factory method
-    public static KycDocument upload(UUID userId, DocumentType type, ...);
-    
-    // Business methods
-    public void approve(UUID adminId);
-    public void reject(UUID adminId, String reason);
+Admin logs into dashboard, sees list of pending documents:
+- Views passport scan
+- Checks if photo is clear
+- Checks if name matches registration
+- Clicks ""Approve"" or ""Reject""
+
+**Pros:**
+-  100% accurate (human review)
+-  No integration costs
+-  Can handle edge cases (damaged passports, etc.)
+
+**Cons:**
+-  Slow (24-48 hours)
+-  Doesn't scale (need more admins as users grow)
+-  Human error (tired admin approves fake passport)
+
+**Option 2: Automated AI Review (Future Phase)**
+
+Integrate with **Onfido**, **Jumio**, or **Stripe Identity**:
+- User uploads document  Sent to AI service
+- AI extracts text (OCR)
+- AI checks if document is real (not photoshopped)
+- AI matches selfie to passport photo
+- Auto-approves in 30 seconds
+
+**Pros:**
+-  Fast (instant or < 1 minute)
+-  Scales infinitely
+-  Catches sophisticated fakes
+
+**Cons:**
+-  Expensive (-3 per verification)
+-  Not 100% accurate (sometimes rejects real passports)
+-  Vendor lock-in
+
+**Our Decision:** Start with manual, upgrade to AI when we have > 1000 users/month.
+
+---
+
+### 1.5.7  KYC-Gated Operations
+
+**What Operations Require KYC?**
+
+ **Require KYC (kyc_status = VERIFIED):**
+- Create wallet
+- Send money
+- Withdraw to bank account
+- Cash out to mobile money
+
+ **Don't Require KYC:**
+- Register account
+- Login
+- View profile
+- Read transaction history (if wallet exists)
+
+**Why This Split?**
+
+Regulations say ""verify users before they handle money"". Reading data is okay, moving money is not.
+
+**Implementation:**
+
+Before any money-moving operation, we check:
+``
+if (user.kycStatus != VERIFIED) {
+    throw KycRequiredException(""Complete KYC to continue"");
 }
 ``
 
-**DocumentType Enum:**
-
-``java
-public enum DocumentType {
-    PASSPORT,
-    NATIONAL_ID,
-    DRIVERS_LICENSE,
-    RESIDENCE_PERMIT,
-    OTHER
-}
-``
+This gate is enforced in:
+- CreateWalletUseCase
+- SendMoneyUseCase
+- WithdrawUseCase
 
 ---
 
-### 1.5.3  File Storage Strategy
+### 1.5.8  File Upload: Multipart vs Base64
 
-**Development:** LocalFileStorageService
-- Stores files in ./uploads/kyc/{userId}/
-- Each file gets a unique UUID prefix to prevent collisions
-- Example: ./uploads/kyc/123e4567-.../9f6b8a1c-..._passport.jpg
+**Option 1: Multipart Form Data (What We Built)**
 
-**Production:** Replace with cloud storage
-- **AWS S3**: Most common choice
-- **Azure Blob Storage**: If using Azure ecosystem
-- **Google Cloud Storage**: If using GCP
-
-**Why use an interface?**
-
-``java
-// Port interface in domain layer
-public interface FileStorageService {
-    String storeFile(byte[] data, String fileName, UUID userId);
-    byte[] retrieveFile(String filePath);
-    void deleteFile(String filePath);
-}
-
-// Implementations in infrastructure layer
-@Service
-public class LocalFileStorageService implements FileStorageService { ... }
-
-@Service
-@Profile(""production"")
-public class S3FileStorageService implements FileStorageService { ... }
+Client sends file as multipart/form-data:
 ``
-
-This follows **Hexagonal Architecture**  domain doesn't depend on infrastructure.
-
----
-
-### 1.5.4  Database Schema
-
-**kyc_documents table:**
-
-``sql
-CREATE TABLE kyc_documents (
-    id                UUID PRIMARY KEY,
-    user_id           UUID NOT NULL REFERENCES users(id),
-    document_type     VARCHAR(50) NOT NULL,
-    file_path         VARCHAR(500) NOT NULL,
-    file_name         VARCHAR(255) NOT NULL,
-    mime_type         VARCHAR(100),
-    file_size         BIGINT,
-    status            VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    rejection_reason  TEXT,
-    uploaded_at       TIMESTAMP NOT NULL DEFAULT NOW(),
-    reviewed_at       TIMESTAMP,
-    reviewed_by       UUID REFERENCES users(id)
-);
-
-CREATE INDEX idx_kyc_documents_user ON kyc_documents(user_id);
-CREATE INDEX idx_kyc_documents_status ON kyc_documents(status);
-``
-
-**Why these indexes?**
-- idx_kyc_documents_user: Fast lookup of all documents for a user
-- idx_kyc_documents_status: Admin dashboard can quickly query PENDING documents
-
----
-
-### 1.5.5  API Endpoints
-
-#### 1. Upload KYC Document
-
-``http
 POST /api/v1/kyc/upload
-Authorization: Bearer {JWT}
 Content-Type: multipart/form-data
 
-documentType: PASSPORT
-file: <binary file data>
+--boundary--
+Content-Disposition: form-data; name=""documentType""
+PASSPORT
+--boundary--
+Content-Disposition: form-data; name=""file""; filename=""passport.jpg""
+Content-Type: image/jpeg
+
+<binary image data>
+--boundary--
 ``
 
-**Response:**
+**Pros:**
+-  Standard for file uploads (all browsers support it)
+-  Efficient (no base64 encoding overhead)
+-  Easy to test with Postman/cURL
 
+**Cons:**
+-  Harder to use from React Native (needs special library)
+
+**Option 2: Base64 in JSON**
+
+Client encodes file as base64 string:
 ``json
 {
-  ""documentId"": ""9f6b8a1c-..."",
   ""documentType"": ""PASSPORT"",
   ""fileName"": ""passport.jpg"",
-  ""status"": ""PENDING"",
-  ""uploadedAt"": ""2026-02-14T15:30:00Z""
+  ""fileData"": ""iVBORw0KGgoAAAANSUhEUgAA...""
 }
 ``
 
-**Validations:**
-- File size: Max 5MB
-- Allowed types: image/jpeg, image/png, pplication/pdf
-- User must be authenticated
+**Pros:**
+-  Easy to use from any client (just JSON)
+  
+**Cons:**
+-  33% larger payload (base64 encoding overhead)
+-  Can't stream large files (entire file in memory)
 
-#### 2. Get KYC Status
-
-``http
-GET /api/v1/kyc/status
-Authorization: Bearer {JWT}
-``
-
-**Response:**
-
-``json
-{
-  ""overallStatus"": ""PENDING"",
-  ""documents"": [
-    {
-      ""id"": ""9f6b8a1c-..."",
-      ""type"": ""PASSPORT"",
-      ""fileName"": ""passport.jpg"",
-      ""status"": ""PENDING"",
-      ""rejectionReason"": null,
-      ""uploadedAt"": ""2026-02-14T15:30:00Z""
-    }
-  ]
-}
-``
+**Our Decision:** Multipart wins. React Native has libraries (expo-image-picker) that handle it.
 
 ---
 
-### 1.5.6  Security Considerations
+### 1.5.9  Document Expiry & Re-verification
 
-**1. File Upload Security**
+**The Problem:**
 
-``java
-private void validateFile(MultipartFile file) {
-    // Size check (prevent DoS via large files)
-    if (file.getSize() > MAX_FILE_SIZE) {
-        throw new InvalidDocumentException(""File too large"");
-    }
-    
-    // MIME type check (prevent malicious file uploads)
-    String contentType = file.getContentType();
-    if (!ALLOWED_MIME_TYPES.contains(contentType)) {
-        throw new InvalidDocumentException(""Invalid file type"");
-    }
-    
-    // TODO: Implement virus scanning in production
-}
-``
+Passports expire every 10 years. If user uploaded passport in 2026, by 2036 it's expired. Should we require re-upload?
 
-**2. File Storage Security**
+**Option 1: No Expiry Tracking**
+- Once verified, stay verified forever
+-  Simple
+-  User might have changed appearance (aging)
+-  Document might be revoked (stolen passport reported)
 
-- **Development**: Files stored locally with restricted permissions
-- **Production**: 
-  - Use S3 with **private buckets** (not public)
-  - Enable **server-side encryption** (SSE-S3 or SSE-KMS)
-  - Use **pre-signed URLs** for temporary access (not direct URLs)
-  - Implement **access logging** for compliance audits
+**Option 2: Track Expiry, Require Re-verification**
+- Store document_expiry_date field
+- Cron job checks for expired documents
+- Send email: ""Your passport expired, please re-upload""
+-  More secure
+-  Annoying for users
 
-**3. Sensitive Data Handling**
+**Option 3: Risk-Based Re-verification**
+- Auto-trigger re-verification if:
+  - User suddenly sends large amounts (suspicious)
+  - User changes phone number or email
+  - 5 years since last verification
+-  Balance security and UX
 
-- KYC documents contain **PII (Personally Identifiable Information)**
-- Must comply with **GDPR**, **CCPA**, and local data protection laws
-- Implement **data retention policies** (delete documents after X years)
-- **Encrypt at rest** and **in transit** (HTTPS)
+**Our Decision (Future Phase):** Implement Option 3. For now, no expiry tracking.
 
 ---
 
-### 1.5.7  Testing Strategy
+### Questions for You (Phase 1.5)
 
-**Manual Testing:**
+1. **Selfie Verification:** Should users also upload a selfie alongside their ID?
+   - Prevents using stolen documents
+   - But adds friction (some users don't want to take selfies)
 
-1. **Upload Valid Document**
-   - Use Postman to upload a JPEG passport scan
-   - Verify file stored in ./uploads/kyc/{userId}/
-   - Check database: SELECT * FROM kyc_documents
-   - Verify user status: SELECT kyc_status FROM users WHERE id = '...'
+2. **Multiple Documents:** Require 2 documents (passport + utility bill for address)?
+   - More secure
+   - But harder for users (some don't have utility bills in their name)
 
-2. **Upload Invalid Document**
-   - Try uploading a 10MB file  Should fail
-   - Try uploading a .exe file  Should fail
-   - Verify error messages are clear
+3. **Third-Party KYC:** Integrate Onfido/Jumio now, or wait until we have revenue?
+   - Costs -3 per verification
+   - But saves admin time
 
-3. **Get KYC Status**
-   - Upload multiple documents
-   - Call GET /api/v1/kyc/status
-   - Verify all documents are listed
+4. **Document Retention:** How long to keep uploaded documents?
+   - Law requires 5-10 years (varies by country)
+   - But privacy laws (GDPR) say ""don't keep data longer than necessary""
+   - Conflict!
 
-**Integration Tests:**
-
-``java
-@Test
-void shouldUploadKycDocument() {
-    // Given
-    MockMultipartFile file = new MockMultipartFile(
-        ""file"", 
-        ""passport.jpg"", 
-        ""image/jpeg"", 
-        ""test data"".getBytes()
-    );
-    
-    // When
-    UploadDocumentResponse response = uploadKycDocumentUseCase.execute(
-        userId, 
-        new UploadDocumentRequest(DocumentType.PASSPORT, file)
-    );
-    
-    // Then
-    assertThat(response.documentId()).isNotNull();
-    assertThat(response.status()).isEqualTo(KycStatus.PENDING);
-    
-    // Verify user status updated
-    User user = userRepository.findById(userId).orElseThrow();
-    assertThat(user.getKycStatus()).isEqualTo(KycStatus.PENDING);
-}
-``
+5. **Admin Dashboard:** Build in Phase 2, or hire manual reviewers for now?
+   - Reviewers can use SQL queries: SELECT * FROM kyc_documents WHERE status='PENDING'
+   - But dashboard is better UX
 
 ---
 
-### 1.5.8  Admin Review (Future Phase 2)
-
-**Admin Dashboard Features:**
-
-1. **List Pending Documents**
-   ``sql
-   SELECT * FROM kyc_documents 
-   WHERE status = 'PENDING' 
-   ORDER BY uploaded_at ASC;
-   ``
-
-2. **Approve Document**
-   ``java
-   KycDocument doc = findById(documentId);
-   doc.approve(adminUserId);
-   
-   // Update user's overall KYC status
-   User user = findById(doc.getUserId());
-   user.updateKycStatus(KycStatus.VERIFIED);
-   ``
-
-3. **Reject Document**
-   ``java
-   doc.reject(adminUserId, ""Passport image is blurry"");
-   user.updateKycStatus(KycStatus.REJECTED);
-   
-   // Send email/SMS to user
-   notificationService.notifyKycRejected(user, rejectionReason);
-   ``
-
----
-
-### 1.5.9  KYC-Gated Operations
-
-**Example: Block wallet creation if KYC not verified**
-
-``java
-@Service
-public class CreateWalletUseCase {
-    
-    public Wallet execute(UUID userId, Currency currency) {
-        User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException(""User not found""));
-        
-        // KYC gate
-        if (user.getKycStatus() != KycStatus.VERIFIED) {
-            throw new KycRequiredException(
-                ""You must complete KYC verification before creating a wallet""
-            );
-        }
-        
-        // Proceed with wallet creation
-        return Wallet.create(userId, currency);
-    }
-}
-``
-
-**Common KYC-Gated Operations:**
--  Creating a wallet
--  Sending money (transfers)
--  Withdrawing to bank account
--  NOT required: Registration, login, viewing balance
-
----
-
-### Questions for Production
-
-1. **Third-Party KYC Providers**: 
-   - Should we integrate with **Onfido**, **Jumio**, or **Stripe Identity** for automatic verification?
-   - Or keep manual admin review?
-
-2. **Document Expiry**:
-   - Should we track document expiration dates and require re-verification?
-   - Example: Passports expire after 10 years
-
-3. **Multi-Document Requirements**:
-   - Should we require multiple documents (e.g., passport + utility bill)?
-   - Or is one government-issued ID sufficient?
-
-4. **Selfie Verification**:
-   - Should users upload a selfie to match against their ID photo?
-   - Helps prevent using stolen documents
-
----
-
-**Phase 1 Complete!**  Ready for Phase 2: Wallet & Ledger.
+**Ready for Phase 2: Wallet & Ledger!** 
