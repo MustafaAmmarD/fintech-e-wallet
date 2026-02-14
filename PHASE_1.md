@@ -1294,29 +1294,80 @@ Passports expire every 10 years. If user uploaded passport in 2026, by 2036 it's
 
 ---
 
-### Questions for You (Phase 1.5)
+### Design Decisions (Phase 1.5)
 
-1. **Selfie Verification:** Should users also upload a selfie alongside their ID?
-   - Prevents using stolen documents
-   - But adds friction (some users don't want to take selfies)
+> [!IMPORTANT]
+> **Design decisions finalized on 2026-02-14**
 
-2. **Multiple Documents:** Require 2 documents (passport + utility bill for address)?
-   - More secure
-   - But harder for users (some don't have utility bills in their name)
+#### 1. ? Selfie Verification  **YES**
+**Decision:** Users must upload a selfie alongside their ID document.
 
-3. **Third-Party KYC:** Integrate Onfido/Jumio now, or wait until we have revenue?
-   - Costs -3 per verification
-   - But saves admin time
+**Rationale:**
+- Prevents use of stolen documents (face match required)
+- Industry standard for fintech KYC
+- Minor friction acceptable for security gain
 
-4. **Document Retention:** How long to keep uploaded documents?
-   - Law requires 5-10 years (varies by country)
-   - But privacy laws (GDPR) say ""don't keep data longer than necessary""
-   - Conflict!
+**Implementation:** Phase 2 will add:
+- Selfie upload field in KYC form
+- Admin can compare selfie to passport photo
+- Future: AI face-matching integration
 
-5. **Admin Dashboard:** Build in Phase 2, or hire manual reviewers for now?
-   - Reviewers can use SQL queries: SELECT * FROM kyc_documents WHERE status='PENDING'
-   - But dashboard is better UX
+---
 
+#### 2.  Multiple Documents  **NO**
+**Decision:** Only 1 government-issued ID required (no utility bill).
+
+**Rationale:**
+- Address verification can be added later if needed
+- Reduces user friction (easier onboarding)
+- Many users don't have utility bills in their name
+- Passport/National ID already verifies identity sufficiently
+
+---
+
+#### 3.  Third-Party KYC  **NOT NOW**
+**Decision:** Manual admin review for now. No Onfido/Jumio integration yet.
+
+**Rationale:**
+- Costs $1-3 per verification (expensive for MVP)
+- Manual review is fine for low volume (< 1,000 users/month)
+- Can integrate later when we have revenue
+
+**Revisit when:** Monthly KYC submissions exceed 500
+
+---
+
+#### 4.  Document Retention  **5 YEARS**
+**Decision:** Keep uploaded documents for 5 years after account creation.
+
+**Rationale:**
+- Meets minimum regulatory compliance
+- Balances legal requirements with privacy concerns
+- Auto-delete after 5 years (cron job)
+
+**Implementation:**
+- Add document_expiry_date field
+- Monthly cron job deletes expired documents
+- Log deletions for audit trail
+
+---
+
+#### 5.  Admin Dashboard  **BUILD IN PHASE 2**
+**Decision:** Build proper admin dashboard in Phase 2.
+
+**Rationale:**
+- Better UX for admin reviewers
+- Reduces errors
+- Can show document preview
+- Scalable
+
+**Phase 2 Dashboard Features:**
+- List pending KYC documents
+- View uploaded document images
+- Approve/Reject with reason
+- Search by user name/phone
+
+---
 ---
 
 **Ready for Phase 2: Wallet & Ledger!** 
