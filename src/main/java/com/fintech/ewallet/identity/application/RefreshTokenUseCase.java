@@ -43,6 +43,7 @@ public class RefreshTokenUseCase {
 
             String tokenId = claims.getId();
             UUID userId = UUID.fromString(claims.getSubject());
+            String deviceId = (String) claims.get("deviceId"); // NEW: extract deviceId
 
             // 2. Check if token is blacklisted
             if (tokenBlacklistService.isBlacklisted(tokenId)) {
@@ -67,12 +68,12 @@ public class RefreshTokenUseCase {
                 tokenBlacklistService.blacklistToken(tokenId, ttl);
             }
 
-            // 6. Generate new tokens
+            // 6. Generate new tokens with same deviceId
             String newAccessToken = jwtTokenProvider.generateAccessToken(user);
-            String newRefreshToken = jwtTokenProvider.generateRefreshToken(user);
+            String newRefreshToken = jwtTokenProvider.generateRefreshToken(user, deviceId);
             long expiresIn = jwtTokenProvider.getAccessTokenExpirationMs();
 
-            log.info("Token refreshed for user: {}", userId);
+            log.info("Token refreshed for user: {} on device: {}", userId, deviceId);
 
             return new RefreshTokenResponse(newAccessToken, newRefreshToken, expiresIn);
 

@@ -61,15 +61,17 @@ public class JwtTokenProvider {
     }
 
     /**
-     * Generate a long-lived refresh token (7 days default).
+     * Generate a long-lived refresh token (7 days default) tied to a device.
+     * Phase 1.4: Includes deviceId in claims.
      */
-    public String generateRefreshToken(User user) {
+    public String generateRefreshToken(User user, String deviceId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + refreshTokenExpirationMs);
 
         return Jwts.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(user.getId().toString())
+                .claim("deviceId", deviceId) // NEW: tie token to device
                 .claim("type", "refresh")
                 .issuedAt(now)
                 .expiration(expiry)

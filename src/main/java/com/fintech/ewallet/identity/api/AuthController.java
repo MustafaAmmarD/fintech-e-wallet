@@ -9,6 +9,7 @@ import com.fintech.ewallet.identity.application.dto.LoginResponse;
 import com.fintech.ewallet.identity.application.dto.RefreshTokenResponse;
 import com.fintech.ewallet.identity.application.dto.RegisterRequest;
 import com.fintech.ewallet.identity.application.dto.RegisterResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -44,10 +45,14 @@ public class AuthController {
     /**
      * Login with phone and password.
      * Returns JWT access and refresh tokens.
+     * Phase 1.4: Now includes device binding.
      */
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        LoginResponse response = loginUseCase.execute(request);
+    public ResponseEntity<LoginResponse> login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest) {
+
+        LoginResponse response = loginUseCase.execute(request, httpRequest);
         return ResponseEntity.ok(response);
     }
 
