@@ -119,6 +119,12 @@
 			<optional>true</optional>
 		</dependency>
 		
+		<!-- Redis (Token Blacklist) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+		
 		<!-- Development -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

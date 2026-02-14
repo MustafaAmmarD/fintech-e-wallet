@@ -10,8 +10,8 @@
 | Step | Title                      | Scope                                         | Status        |
 | ---- | -------------------------- | --------------------------------------------- | ------------- |
 | 1.1  | Project Setup              | pom.xml, package structure, profiles, configs | ✅ Done       |
-| 1.2  | User & Identity Management | User entity, registration, login              | 🟡 Discussion |
-| 1.3  | JWT Authentication         | Token generation, refresh, validation         | ⬜ Pending    |
+| 1.2  | User & Identity Management | User entity, registration, login              | ✅ Done       |
+| 1.3  | JWT Authentication         | Token generation, refresh, validation         | 🟡 Discussion |
 | 1.4  | Device Binding & Security  | Trusted devices, fingerprinting               | ⬜ Pending    |
 | 1.5  | KYC Verification           | Document upload, admin review                 | ⬜ Pending    |
 
@@ -570,3 +570,166 @@ public record LoginResponse(
 6. **Soft delete**: Add `deleted_at` column, or hard-delete?
 7. **Registration → auto-login?** Return tokens on register, or require separate login?
 8. **Anything else** you want on the User entity?
+
+---
+
+## 1.3 JWT Authentication — Discussion
+
+> [!NOTE]
+> Phase 1.2 created `JwtTokenProvider` which **generates** tokens during login. Phase 1.3 adds the **filter chain** to **validate** tokens and **protect** endpoints.
+
+### Current State
+
+Right now, our API is **completely open**:
+
+- `SecurityConfig` has `permitAll()` — anyone can call any endpoint.
+- Login returns JWT tokens, but **nothing validates them**.
+- A user could call protected endpoints without logging in.
+
+**Phase 1.3 Goal:** Lock down the API so only authenticated users with valid tokens can access protected resources.
+
+---
+
+### 1.3.1 — JWT Authentication Filter
+
+**What it does:**
+
+1. **Intercepts** every HTTP request.
+2. **Extracts** the JWT token from the `Authorization: Bearer <token>` header.
+3. **Validates** the token (signature, expiration, format).
+4. **Extracts** the User ID from the token.
+5. **Sets** Spring Security's `Authentication` object so Spring knows "this user is logged in".
+
+**Flow Diagram:**
+
+```
+Client Request
+    │
+    ▼
+┌─────────────────────────────────────────┐
+│ JwtAuthenticationFilter                 │
+│  1. Extract token from header           │
+│  2. Call JwtTokenProvider.parseToken()  │
+│  3. Check token is not blacklisted      │
+│  4. Extract userId from claims          │
+│  5. Create Authentication object        │
+│  6. Set SecurityContext                 │
+└────────────│────────────────────────────┘
+             ▼
+        Controller
+             │
+             ▼
+        Use Cases (can access userId via @AuthenticationPrincipal)
+```
+
+---
+
+### 1.3.2 — Refresh Token Endpoint
+
+**Why we need it:**
+
+Access tokens expire quickly (1 hour). Instead of forcing the user to re-enter their password every hour, we use a **refresh token** (valid for 7 days) to get a new access token.
+
+**Flow:**
+
+```
+POST /api/v1/auth/refresh
+Headers:
+  Authorization: Bearer <refresh_token>
+
+Response:
+{
+  "accessToken": "new_jwt_...",
+  "refreshToken": "new_refresh_...", // Optional: rotate refresh tokens
+  "expiresIn": 3600000
+}
+```
+
+**Security considerations:**
+
+- Should we **rotate** refresh tokens? (Issue a new refresh token each time, invalidate the old one)
+- Should refresh tokens be **tied to a device**? (Different refresh token per phone/laptop)
+
+---
+
+### 1.3.3 — Logout Endpoint
+
+**The Problem:** JWTs are **stateless**. Once issued, they're valid until they expire. You can't "delete" them from the server.
+
+**Solution: Token Blacklist**
+
+When a user logs out:
+
+1. Add the JWT's unique ID (`jti` claim) to a **blacklist**.
+2. The filter checks the blacklist before validating the token.
+3. If the token is blacklisted → reject it, even if it's not expired yet.
+
+**Where to store the blacklist?**
+
+| Option                            | Pros                                                   | Cons                          |
+| --------------------------------- | ------------------------------------------------------ | ----------------------------- |
+| **Redis**                         | Fast (in-memory), auto-expiry (TTL = token expiration) | Requires Redis setup          |
+| **Database**                      | Simple, no extra infrastructure                        | Slower, needs cleanup job     |
+| **In-Memory (ConcurrentHashMap)** | Zero dependencies                                      | Lost on restart, not scalable |
+
+---
+
+### 1.3.4 — Protecting Endpoints
+
+**Update `SecurityConfig` to:**
+
+```java
+http
+    .authorizeHttpRequests(auth -> auth
+        .requestMatchers("/api/v1/auth/**").permitAll()         // Public endpoints
+        .requestMatchers("/actuator/health").permitAll()
+        .requestMatchers("/swagger-ui/**", "/api-docs/**").permitAll()
+        .anyRequest().authenticated()                           // Everything else requires JWT
+    )
+    .sessionManagement(session ->
+        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)  // No cookies
+    )
+    .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+```
+
+---
+
+### 1.3.5 — Files to Create/Modify
+
+| File                                 | Action | Purpose                                                           |
+| ------------------------------------ | ------ | ----------------------------------------------------------------- |
+| `JwtAuthenticationFilter.java`       | NEW    | Extract + validate token, set authentication                      |
+| `TokenBlacklistService.java`         | NEW    | Blacklist interface (port)                                        |
+| `InMemoryTokenBlacklistService.java` | NEW    | Simple in-memory implementation                                   |
+| `RefreshTokenUseCase.java`           | NEW    | Application layer: validate refresh token, issue new access token |
+| `AuthController.java`                | MODIFY | Add `/refresh` and `/logout` endpoints                            |
+| `SecurityConfig.java`                | MODIFY | Add filter, lock down endpoints                                   |
+
+---
+
+### 1.3.6 — Extracting User from Context
+
+Once the filter sets the authentication, controllers can access the logged-in user like this:
+
+```java
+@GetMapping("/me")
+public UserProfile getProfile(@AuthenticationPrincipal UUID userId) {
+    // userId is automatically extracted from the JWT
+}
+```
+
+Or create a custom `@CurrentUserId` annotation for cleaner code.
+
+---
+
+## Questions for You (Phase 1.3)
+
+1. **Token Blacklist Storage**: Redis (requires setup), Database (simpler but slower), or In-Memory (not production-ready)?
+2. **Refresh Token Rotation**: Should we issue a new refresh token on each `/refresh` call and invalidate the old one? (More secure but complex)
+3. **Device Binding**: Should refresh tokens be tied to a specific device? (One device logout = only that device's refresh token is invalidated)
+4. **Token Expiration Times**: Keep 1 hour access + 7 days refresh, or change?
+5. **Public Endpoints**: Which endpoints should remain public after Phase 1.3?
+   - `/api/v1/auth/register` ✅
+   - `/api/v1/auth/login` ✅
+   - `/actuator/health` ✅
+   - Swagger UI (`/swagger-ui/**`) — public or require auth?

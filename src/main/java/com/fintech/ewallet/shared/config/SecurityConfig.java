@@ -1,45 +1,66 @@
 package com.fintech.ewallet.shared.config;
 
+import com.fintech.ewallet.identity.infrastructure.security.JwtAuthenticationFilter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Security configuration for the application.
  * <p>
- * Phase 1.1: Permits all requests. Will be locked down in Phase 1.3 (JWT).
+ * Phase 1.3: JWT authentication enabled, stateless sessions, protected
+ * endpoints.
  */
 @Configuration
 @EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .csrf(AbstractHttpConfigurer::disable) // API-only, no CSRF needed
-                .headers(headers -> headers
-                        .frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin) // Allow H2 console frames
-                )
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/swagger-ui/**",
-                                "/api-docs/**",
-                                "/actuator/**",
-                                "/h2-console/**")
-                        .permitAll()
-                        .anyRequest().permitAll() // Open for now — Phase 1.3 will restrict
-                );
-        return http.build();
-    }
+        private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12); // 12-round BCrypt
-    }
+        @Bean
+        public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+                http
+                                .csrf(AbstractHttpConfigurer::disable) // API-only, no CSRF needed
+                                .headers(headers -> headers
+                                                .frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin) // Allow
+                                                                                                                // H2
+                                                                                                                // console
+                                                                                                                // frames
+                                )
+                                .sessionManagement(session -> session
+                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // No server
+                                                                                                        // sessions
+                                )
+                                .authorizeHttpRequests(auth -> auth
+                                                // Public endpoints
+                                                .requestMatchers(
+                                                                "/api/v1/auth/register",
+                                                                "/api/v1/auth/login",
+                                                                "/api/v1/auth/refresh",
+                                                                "/swagger-ui/**",
+                                                                "/api-docs/**",
+                                                                "/actuator/health",
+                                                                "/h2-console/**")
+                                                .permitAll()
+                                                // Everything else requires authentication
+                                                .anyRequest().authenticated())
+                                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+                return http.build();
+        }
+
+        @Bean
+        public PasswordEncoder passwordEncoder() {
+                return new BCryptPasswordEncoder(12); // 12-round BCrypt
+        }
 }
