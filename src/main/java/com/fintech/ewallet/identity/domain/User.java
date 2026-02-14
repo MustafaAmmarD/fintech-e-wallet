@@ -92,6 +92,14 @@ public class User {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Update KYC status (e.g., when documents are uploaded or reviewed).
+     */
+    public void updateKycStatus(KycStatus newStatus) {
+        this.kycStatus = newStatus;
+        this.updatedAt = Instant.now();
+    }
+
     // ─── Getters ─────────────────────────────────────────────
 
     public UUID getId() {

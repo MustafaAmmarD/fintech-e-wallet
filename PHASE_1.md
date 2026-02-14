@@ -7,13 +7,13 @@
 
 ## Phase 1 Overview
 
-| Step | Title                      | Scope                                         | Status        |
-| ---- | -------------------------- | --------------------------------------------- | ------------- |
-| 1.1  | Project Setup              | pom.xml, package structure, profiles, configs | ✅ Done       |
-| 1.2  | User & Identity Management | User entity, registration, login              | ✅ Done       |
-| 1.3  | JWT Authentication         | Token generation, refresh, validation         | ✅ Done       |
-| 1.4  | Device Binding & Security  | Trusted devices, fingerprinting               | 🟡 Discussion |
-| 1.5  | KYC Verification           | Document upload, admin review                 | ⬜ Pending    |
+| Step | Title                      | Scope                                         | Status     |
+| ---- | -------------------------- | --------------------------------------------- | ---------- |
+| 1.1  | Project Setup              | pom.xml, package structure, profiles, configs | ✅ Done    |
+| 1.2  | User & Identity Management | User entity, registration, login              | ✅ Done    |
+| 1.3  | JWT Authentication         | Token generation, refresh, validation         | ✅ Done    |
+| 1.4  | Device Binding & Security  | Trusted devices, fingerprinting               | ✅ Done    |
+| 1.5  | KYC Verification           | Document upload, admin review                 | ⬜ Pending |
 
 ---
 
