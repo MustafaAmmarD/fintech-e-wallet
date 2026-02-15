@@ -1371,3 +1371,129 @@ Passports expire every 10 years. If user uploaded passport in 2026, by 2036 it's
 ---
 
 **Ready for Phase 2: Wallet & Ledger!** 
+---
+
+## 1.6 Phase 1 Testing Guide
+
+> [!IMPORTANT]
+> **Prerequisite:** Docker Desktop must be installed and running.
+
+### 1.6.1  Start Infrastructure
+
+Run the following command in the project root to start PostgreSQL and Redis:
+
+`ash
+docker-compose up -d
+`
+
+### 1.6.2  Run Application
+
+Start the Spring Boot application:
+
+`ash
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=dev
+`
+
+### 1.6.3  Manual Test Scenarios
+
+Use **Postman** or **cURL** to verify the following flows.
+
+#### A. User Registration (Phase 1.2)
+
+**Step 1:** Register a new user.
+
+`ash
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H ""Content-Type: application/json"" \
+  -d '{
+    ""phoneNumber"": ""+967770000001"",
+    ""password"": ""SecurePass123!"",
+    ""fullName"": ""Test User""
+  }'
+`
+
+**Expected Response (200 OK):**
+`json
+{
+  ""id"": ""uuid..."",
+  ""phoneNumber"": ""+967770000001"",
+  ""fullName"": ""Test User"",
+  ""message"": ""User registered successfully""
+}
+`
+
+#### B. Login & Device Binding (Phase 1.3 & 1.4)
+
+**Step 2:** Login from a new device.
+
+`ash
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H ""Content-Type: application/json"" \
+  -d '{
+    ""phoneNumber"": ""+967770000001"",
+    ""password"": ""SecurePass123!"",
+    ""deviceId"": ""device-uuid-123"",
+    ""deviceName"": ""Test iPhone""
+  }'
+`
+
+**Expected Response (200 OK):**
+`json
+{
+  ""accessToken"": ""eyJhbG..."",
+  ""refreshToken"": ""uuid..."",
+  ""tokenType"": ""Bearer"",
+  ""expiresIn"": 900
+}
+`
+
+> **Note:** Copy the ccessToken for subsequent requests.
+
+#### C. KYC Document Upload (Phase 1.5)
+
+**Step 3:** Upload a passport image.
+
+*(Using cURL for file upload is complex on Windows; recommend Postman)*
+
+If using Postman:
+- **POST** http://localhost:8080/api/v1/kyc/upload
+- **Auth**: Bearer Token (paste accessToken)
+- **Body**: form-data
+  - documentType: PASSPORT
+  - ile: Select a .jpg or .pdf file (< 5MB)
+
+**Expected Response (200 OK):**
+`json
+{
+  ""documentId"": ""uuid..."",
+  ""documentType"": ""PASSPORT"",
+  ""status"": ""PENDING"",
+  ""uploadedAt"": ""...""
+}
+`
+
+#### D. Check KYC Status
+
+**Step 4:** Verify status is PENDING.
+
+`ash
+curl -X GET http://localhost:8080/api/v1/kyc/status \
+  -H ""Authorization: Bearer <YOUR_ACCESS_TOKEN>""
+`
+
+**Expected Response (200 OK):**
+`json
+{
+  ""overallStatus"": ""PENDING"",
+  ""documents"": [
+    {
+      ""type"": ""PASSPORT"",
+      ""status"": ""PENDING""
+    }
+  ]
+}
+`
+
+---
+
+**Testing Complete!** If all steps pass, Phase 1 is fully verified.
