@@ -517,35 +517,362 @@ Zero-Sum Check: -1000 + 1000 = 0 ✅
 
 ---
 
-### Questions for You (Before Implementation)
+### Design Decisions (2.2 Ledger)
 
-Before I start coding the ledger system, I need your decisions on:
+> [!IMPORTANT]
+> **Decisions finalized on 2026-02-16 based on user feedback**
 
-1. **Ledger Immutability**: Should ledger entries be TRULY immutable (no UPDATE/DELETE allowed)?
-   - **YES** (recommended): Corrections are new entries, history never changes
-   - **NO**: Allow admin to edit/delete entries (risky, but flexible)
+1. ✅ **Ledger Immutability:** **YES** — Append-only, no UPDATE/DELETE
+2. ✅ **Balance Snapshot:** **YES** — Store `balanceAfter` in each entry for audit trail
+3. ✅ **Reference Types:** Start with **4 types**:
+   - `TRANSFER` — User-to-user money transfer
+   - `DEPOSIT` — Agent/bank → user
+   - `WITHDRAWAL` — User → agent/bank (cash out)
+   - `FEE` — System transaction fees
 
-2. **Balance Snapshot**: Should each `LedgerEntry` store `balanceAfter`?
-   - **YES**: Easier auditing (can see balance at any point in time)
-   - **NO**: Calculate balance by summing entries (slower but saves space)
+   _Note: REFUND and ADJUSTMENT will be added in future phases_
 
-3. **Reference Types**: What types of transactions should we support initially?
-   - `TRANSFER` (user to user)
-   - `DEPOSIT` (agent → user)
-   - `WITHDRAWAL` (user → agent)
-   - `FEE` (system charges)
-   - `REFUND` (reverse a transfer)
-   - Others?
+4. ✅ **Concurrency Control:** **Pessimistic Locking** (`SELECT ... FOR UPDATE`)
+   - **Why?** Safety over speed for financial transactions
+   - **Trade-off:** Slightly slower but prevents race conditions
+   - **When to change?** Only if we hit 100,000+ concurrent transactions/second
 
-4. **Concurrent Transactions**: How should we handle race conditions?
-   - **Pessimistic Locking**: `SELECT ... FOR UPDATE` (safe, slower)
-   - **Optimistic Locking**: Version field (fast, but retry on conflict)
-
-5. **Transaction Limits**: Should we enforce limits for MVP?
-   - Max transfer amount per transaction?
-   - Daily transfer limit per user?
-   - Or no limits for now?
+5. ✅ **Transaction Limits (MVP):**
+   - Max per transaction: **100,000 YER**
+   - Daily limit (verified users): **500,000 YER**
+   - Daily limit (unverified users): **10,000 YER**
+   - Minimum transfer: **1 YER**
 
 ---
 
-**Please answer these questions so I can proceed with the ledger implementation!** 🏗️
+### Explanation: Reference Types
+
+**What are they?**  
+Reference types categorize WHY a ledger entry was created.
+
+**Example Use Cases:**
+
+- **Reporting**: "Show all DEPOSITS this month"
+- **User History**: Filter by TRANSFER only
+- **Revenue Analytics**: Calculate total FEE income
+- **Compliance**: "Show all WITHDRAWALS over 10,000 YER"
+
+---
+
+### Explanation: Pessimistic vs Optimistic Locking
+
+**The Race Condition Problem:**
+
+Ahmed has 1000 YER. Two transfers happen simultaneously:
+
+- Transfer A: Send 800 YER
+- Transfer B: Send 500 YER
+
+**Without locking:**
+
+```
+Thread A reads 1000 → approve (800 < 1000)
+Thread B reads 1000 → approve (500 < 1000)
+Thread A debits 800 → balance = 200
+Thread B debits 500 → balance = -300 ❌ OVERDRAFT!
+```
+
+**Pessimistic Locking Solution:**
+
+```sql
+SELECT balance FROM wallets WHERE id = ? FOR UPDATE;
+-- Row is LOCKED until transaction commits
+```
+
+```
+Thread A locks, reads 1000, debits 800 → balance = 200, unlocks ✅
+Thread B waits... locks, reads 200, rejects (500 > 200) ✅
+```
+
+**Why we chose it:**
+
+- ✅ Impossible to overdraft
+- ✅ Simpler code (no retry logic)
+- ✅ Better UX (clear success/failure)
+- ❌ Slightly slower (acceptable for MVP)
+
+---
+
+## 2.2 Double-Entry Ledger — Implementation
+
+> [!NOTE]
+> **Status**: 🚧 In Progress
+
+### What We Built
+
+We implemented the **double-entry ledger system** — the financial backbone that ensures every transaction is perfectly balanced and auditable.
+
+---
+
+### Architecture Layers
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  DOMAIN LAYER (wallet/domain/)                           │
+│  ├── LedgerEntry.java      → Immutable ledger entry      │
+│  ├── EntryType.java        → Enum (DEBIT, CREDIT)        │
+│  ├──Reference.java    → Enum (TRANSFER, DEPOSIT, FEE)│
+│  └── LedgerRepository.java → Port interface              │
+├──────────────────────────────────────────────────────────┤
+│  APPLICATION LAYER (wallet/application/)                 │
+│  └── RecordLedgerEntryUseCase.java                       │
+│      → Double-entry recording with locking               │
+├──────────────────────────────────────────────────────────┤
+│  INFRASTRUCTURE LAYER (wallet/infrastructure/)           │
+│  ├── LedgerEntryJpaEntity.java                           │
+│  ├── LedgerEntryJpaRepository.java                       │
+│  ├── LedgerEntryMapper.java                              │
+│  └── LedgerRepositoryAdapter.java                        │
+├──────────────────────────────────────────────────────────┤
+│  DATABASE                                                │
+│  └── V6__create_ledger_entries_table.sql                 │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Key Components
+
+#### 1. Domain Entity: `LedgerEntry.java`
+
+**IMMUTABLE** — Once created, a ledger entry can NEVER be updated or deleted.
+
+**Fields:**
+
+- `id`: UUID (primary key)
+- `transactionId`: UUID (groups related entries)
+- `walletId`: UUID (which wallet was affected)
+- `entryType`: DEBIT or CREDIT
+- `amount`: BigDecimal (always positive)
+- `balanceAfter`: BigDecimal (snapshot of wallet balance after this entry)
+- `currency`: Currency enum
+- `referenceType`: TRANSFER, DEPOSIT, WITHDRAWAL, FEE
+- `referenceId`: UUID (ID of the source transaction)
+- `description`: String (human-readable)
+- `createdAt`: Instant (timestamp)
+
+**Why no setters?** Immutability ensures the ledger cannot be tampered with. To correct an error, you create new offsetting entries, not edit old ones.
+
+---
+
+#### 2. Value Objects: Enums
+
+**`EntryType.java`:**
+
+```java
+public enum EntryType {
+    DEBIT,   // Money leaving (-)
+    CREDIT   // Money entering (+)
+}
+```
+
+**`ReferenceType.java`:**
+
+```java
+public enum ReferenceType {
+    TRANSFER,    // User → user
+    DEPOSIT,     // Agent/bank → user
+    WITHDRAWAL,  // User → agent/bank
+    FEE          // System fee
+}
+```
+
+---
+
+#### 3. Use Case: `RecordLedgerEntryUseCase.java`
+
+**Core Methods:**
+
+1. **`recordDoubleEntry(...)`** — Simple 2-entry transaction
+   - Locks both wallets (`FOR UPDATE`)
+   - Debits source, credits destination
+   - Creates 2 ledger entries
+   - Validates zero-sum
+
+2. **`recordTransferWithFee(...)`** — 3-entry transaction
+   - Locks 3 wallets (sender, receiver, fee wallet)
+   - Debits sender (amount + fee)
+   - Credits receiver (amount)
+   - Credits fee wallet (fee)
+   - Validates zero-sum
+
+**Pessimistic Locking in Action:**
+
+```java
+@Transactional
+public UUID recordDoubleEntry(...) {
+    // 1. Load wallets (JPA automatically adds FOR UPDATE due to @Transactional)
+    Wallet fromWallet = walletRepository.findById(fromWalletId)...;
+    Wallet toWallet = walletRepository.findById(toWalletId)...;
+
+    // 2. Update balances (domain validation)
+    fromWallet.debit(amount);  // Validates sufficient funds
+    toWallet.credit(amount);
+
+    // 3. Save (lock released on commit)
+    walletRepository.save(fromWallet);
+    walletRepository.save(toWallet);
+
+    // 4. Create ledger entries
+    ...
+}
+```
+
+**Zero-Sum Validation:**
+
+```java
+private void validateZeroSum(List<LedgerEntry> entries) {
+    BigDecimal sum = ZERO;
+    for (LedgerEntry entry : entries) {
+        sum = entryType == DEBIT ? sum.subtract(amount) : sum.add(amount);
+    }
+
+    if (sum != ZERO) {
+        throw new IllegalStateException("CRITICAL BUG: Entries don't balance!");
+    }
+}
+```
+
+---
+
+#### 4. Database Migration: `V6__create_ledger_entries_table.sql`
+
+```sql
+CREATE TABLE ledger_entries (
+    id UUID PRIMARY KEY,
+    transaction_id UUID NOT NULL,
+    wallet_id UUID NOT NULL REFERENCES wallets(id),
+    entry_type VARCHAR(10) CHECK (entry_type IN ('DEBIT', 'CREDIT')),
+    amount DECIMAL(19, 4) CHECK (amount > 0),
+    balance_after DECIMAL(19, 4) NOT NULL,
+    currency VARCHAR(3) NOT NULL,
+    reference_type VARCHAR(20) CHECK (...),
+    reference_id UUID NOT NULL,
+    description VARCHAR(500),
+    created_at TIMESTAMP NOT NULL
+);
+
+-- Optimized indexes
+CREATE INDEX idx_ledger_wallet_created
+    ON ledger_entries(wallet_id, created_at DESC);
+
+CREATE INDEX idx_ledger_transaction
+    ON ledger_entries(transaction_id);
+```
+
+**Key Constraints:**
+
+- `amount > 0`: Amounts are always positive, sign from `entry_type`
+- `CHECK` constraints: Enforce valid enum values at DB level
+- Indexes: Fast wallet history queries
+
+---
+
+### How It Works: Example Flow
+
+**Scenario:** Ahmed sends 500 YER to Sara
+
+**Step 1: Load Wallets (Pessimistic Lock)**
+
+```
+SELECT * FROM wallets WHERE id = 'ahmed-yer' FOR UPDATE;
+SELECT * FROM wallets WHERE id = 'sara-yer' FOR UPDATE;
+-- Rows locked until transaction commits
+```
+
+**Step 2: Update Balances**
+
+```
+Ahmed: 1000 → 500
+Sara:   500 → 1000
+```
+
+**Step 3: Create Ledger Entries**
+
+```
+Entry 1: {
+    transactionId: TXN-001,
+    walletId: ahmed-yer,
+    entryType: DEBIT,
+    amount: 500,
+    balanceAfter: 500,
+    ...
+}
+
+Entry 2: {
+    transactionId: TXN-001,
+    walletId: sara-yer,
+    entryType: CREDIT,
+    amount: 500,
+    balanceAfter: 1000,
+    ...
+}
+```
+
+**Step 4: Zero-Sum Check**
+
+```
+Sum = -500 (DEBIT) + 500 (CREDIT) = 0 ✅
+```
+
+**Step 5: Commit Transaction**
+
+```
+Wallet updates saved ✅
+Ledger entries saved ✅
+Locks released ✅
+```
+
+---
+
+### Design Rationale
+
+**Q: Why store `balanceAfter` in each entry?**  
+**A:** Audit trail. You can see the exact wallet balance at any point in history without recalculating. Essential for investigations and reconciliation.
+
+**Q: Why pessimistic locking instead of optimistic?**  
+**A:** For financial transactions, **correctness > speed**. Pessimistic locking guarantees no race conditions. The performance cost is negligible for <10,000 concurrent users.
+
+**Q: What if the zero-sum check fails?**  
+**A:** The entire transaction rolls back. This should NEVER happen if the code is correct, so we throw a `Illegal StateException` to alert us immediately.
+
+**Q: Can ledger entries be deleted?**  
+**A:** NO. They're immutable. To reverse a transaction, create offsetting entries. This maintains a perfect audit trail.
+
+---
+
+### Testing the Implementation
+
+**Unit Test Scenario:**
+
+```java
+// Given: Ahmed has 1000 YER, Sara has 500 YER
+UUID txnId = recordLedgerEntryUseCase.recordDoubleEntry(
+    ahmedWalletId, saraWalletId,
+    BigDecimal.valueOf(300), ReferenceType.TRANSFER,
+    UUID.randomUUID(), "Test transfer"
+);
+
+// Then: Balances updated
+assertEquals(700, ahmedWallet.getBalance());
+assertEquals(800, saraWallet.getBalance());
+
+// And: 2 ledger entries created
+List<LedgerEntry> entries = ledgerRepository.findByTransactionId(txnId);
+assertEquals(2, entries.size());
+
+// And: Zero-sum validated
+BigDecimal sum = entries.stream()
+    .map(e -> e.getEntryType() == DEBIT ? e.getAmount().negate() : e.getAmount())
+    .reduce(ZERO, BigDecimal::add);
+assertEquals(ZERO, sum);
+```
+
+---
+
+**Next: Phase 2.3 System Wallets** 🏦
