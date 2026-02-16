@@ -875,4 +875,337 @@ assertEquals(ZERO, sum);
 
 ---
 
-**Next: Phase 2.3 System Wallets** 🏦
+---
+
+## 2.3 System Wallets — Discussion
+
+> [!NOTE]
+> System wallets are **special wallets owned by the platform** (not users) that manage liquidity and collect fees.
+
+### What Are System Wallets?
+
+Think of system wallets as the platform's **internal bank accounts**:
+
+**User Wallets:**
+
+- Owned by individual users (Ahmed, Sara, etc.)
+- Hold user money
+
+**System Wallets:**
+
+- Owned by the platform
+- Manage operational liquidity and revenue
+
+---
+
+### Why Do We Need System Wallets?
+
+**Problem:** Where does money come from when a user deposits cash?
+
+```
+Ahmed goes to an agent and gives 1000 YER cash.
+Agent clicks "Deposit 1000 YER to Ahmed's wallet."
+
+Ahmed's wallet: 0 → 1000 YER ✅
+
+But in double-entry, EVERY credit needs a debit!
+Where did the 1000 YER get debited from? 🤔
+```
+
+**Answer:** The **LIQUIDITY wallet**!
+
+```
+Ledger Entries:
+  DEBIT:  LIQUIDITY_YER  1000 YER  (system wallet)
+  CREDIT: Ahmed's wallet 1000 YER  (user wallet)
+  ────────────────────────────────
+  Sum: 0 ✅
+```
+
+---
+
+### Two Types of System Wallets
+
+#### 1. Liquidity Wallets (Float Management)
+
+**Purpose:** Holds the platform's available cash reserves.
+
+**Real-World Analogy:**  
+When you deposit cash at an ATM, the bank's vault (liquidity) decreases, your account (user wallet) increases.
+
+**Operations:**
+
+- **Deposit:** DEBIT liquidity → CREDIT user
+- **Withdrawal:** DEBIT user → CREDIT liquidity
+
+**One per currency:**
+
+- `LIQUIDITY_YER`
+- `LIQUIDITY_SAR`
+- `LIQUIDITY_USD`
+
+---
+
+#### 2. Fee Wallets (Revenue Collection)
+
+**Purpose:** Collects transaction fees (platform revenue).
+
+**Example:**  
+Ahmed sends 500 YER to Sara with a 5 YER fee.
+
+```
+Ledger Entries:
+  DEBIT:  Ahmed's wallet  505 YER  (user pays 500 + 5 fee)
+  CREDIT: Sara's wallet   500 YER  (user receives 500)
+  CREDIT: FEES_YER          5 YER  (platform earns 5)
+  ─────────────────────────────────
+  Sum: 0 ✅
+```
+
+**One per currency:**
+
+- `FEES_YER`
+- `FEES_SAR`
+- `FEES_USD`
+
+---
+
+### Initial Balances
+
+**Production:**
+
+- All system wallets start at **0 balance**
+- Money only exists when real cash is deposited by agents
+
+**Development/Testing:**
+
+- Seed with fake money for testing (e.g., 10,000,000 YER each)
+- Allows simulating deposits/withdrawals without real cash
+
+---
+
+### System Wallet IDs
+
+We'll use special **reserved UUIDs** for system wallets (not real user IDs):
+
+```java
+// Liquidity Wallets
+LIQUIDITY_YER: 00000000-0000-0000-0000-000000000001
+LIQUIDITY_SAR: 00000000-0000-0000-0000-000000000002
+LIQUIDITY_USD: 00000000-0000-0000-0000-000000000003
+
+// Fee Wallets
+FEES_YER: 00000000-0000-0000-0000-000000000011
+FEES_SAR: 00000000-0000-0000-0000-000000000012
+FEES_USD: 00000000-0000-0000-0000-000000000013
+```
+
+**Why reserved UUIDs?**
+
+- Predictable (easy to reference in code)
+- No collision with real user UUIDs (user_id column will be NULL)
+- Easy to identify in database queries
+
+---
+
+### Implementation Plan
+
+**What We'll Build:**
+
+1. **Migration: `V7__create_system_wallets.sql`**
+   - Insert 6 system wallets (3 liquidity + 3 fee)
+   - Production: 0 balance
+   - [Optional] Dev seed: 10M balance each
+
+2. **Constants Class:** `SystemWallets.java`
+   - Define reserved UUIDs for easy reference
+
+3. **Use Case:** `GetSystemWalletUseCase.java`
+   - Helper to fetch system wallets by currency and type
+
+---
+
+## 2.3 System Wallets — Implementation
+
+> [!NOTE]
+> **Status**: 🚧 In Progress
+
+### What We Built
+
+We created 6 special platform-owned wallets for liquidity management and fee collection, with predictable UUIDs for easy reference.
+
+---
+
+### Components Created
+
+#### 1. Constants Class: `SystemWallets.java`
+
+Centralized definition of all system wallet IDs:
+
+```java
+public final class SystemWallets {
+    // Liquidity Wallets
+    public static final UUID LIQUIDITY_YER = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    public static final UUID LIQUIDITY_SAR = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    public static final UUID LIQUIDITY_USD = UUID.fromString("00000000-0000-0000-0000-000000000003");
+
+    // Fee Wallets
+    public static final UUID FEES_YER = UUID.fromString("00000000-0000-0000-0000-000000000011");
+    public static final UUID FEES_SAR = UUID.fromString("00000000-0000-0000-0000-000000000012");
+    public static final UUID FEES_USD = UUID.fromString("00000000-0000-0000-0000-000000000013");
+
+    public static UUID getLiquidityWallet(Currency currency) { ... }
+    public static UUID getFeeWallet(Currency currency) { ... }
+    public static boolean isSystemWallet(UUID walletId) { ... }
+}
+```
+
+**Usage Examples:**
+
+```java
+// Get fee wallet for YER
+UUID feeWallet = SystemWallets.getFeeWallet(Currency.YER);
+
+// Check if a wallet is a system wallet
+if (SystemWallets.isSystemWallet(walletId)) {
+    // Handle system wallet logic
+}
+```
+
+---
+
+#### 2. Migration: `V6_5__allow_system_wallets.sql`
+
+Modified the wallets table to support system wallets:
+
+```sql
+-- Allow NULL user_id for system wallets
+ALTER TABLE wallets ALTER COLUMN user_id DROP NOT NULL;
+
+-- Update UNIQUE constraint (user wallets only)
+ALTER TABLE wallets ADD CONSTRAINT wallets_user_currency_unique
+    UNIQUE (user_id, currency);
+```
+
+**Why?**
+
+- System wallets have `user_id = NULL` (not owned by any user)
+- User wallets still enforce 1 wallet per currency per user
+
+---
+
+#### 3. Migration: `V7__create_system_wallets.sql`
+
+Inserts the 6 system wallets with zero initial balance:
+
+```sql
+-- Liquidity Wallets
+INSERT INTO wallets (id, user_id, currency, balance, status, created_at, updated_at)
+VALUES
+    ('00000000-0000-0000-0000-000000000001', NULL, 'YER', 0.0000, 'ACTIVE', NOW(), NOW()),
+    ('00000000-0000-0000-0000-000000000002', NULL, 'SAR', 0.0000, 'ACTIVE', NOW(), NOW()),
+    ('00000000-0000-0000-0000-000000000003', NULL, 'USD', 0.0000, 'ACTIVE', NOW(), NOW());
+
+-- Fee Wallets
+INSERT INTO wallets (id, user_id, currency, balance, status, created_at, updated_at)
+VALUES
+    ('00000000-0000-0000-0000-000000000011', NULL, 'YER', 0.0000, 'ACTIVE', NOW(), NOW()),
+    ('00000000-0000-0000-0000-000000000012', NULL, 'SAR', 0.0000, 'ACTIVE', NOW(), NOW()),
+    ('00000000-0000-0000-0000-000000000013', NULL, 'USD', 0.0000, 'ACTIVE', NOW(), NOW());
+```
+
+---
+
+### How System Wallets Work
+
+**Example 1: User Deposit**
+
+Ahmed deposits 1000 YER cash at an agent:
+
+```java
+// Use case code
+UUID txnId = recordLedgerEntryUseCase.recordDoubleEntry(
+    SystemWallets.LIQUIDITY_YER,  // FROM: system liquidity
+    ahmedWalletId,                // TO: user wallet
+    BigDecimal.valueOf(1000),
+    ReferenceType.DEPOSIT,
+    depositId,
+    "Cash deposit"
+);
+```
+
+**Ledger Result:**
+
+```
+Entry 1: DEBIT  LIQUIDITY_YER  1000 YER (liquidity decreases)
+Entry 2: CREDIT Ahmed's wallet 1000 YER (user gains money)
+───────────────────────────────────────
+Sum: 0 ✅
+```
+
+---
+
+**Example 2: Transfer with Fee**
+
+Ahmed sends 500 YER to Sara with 5 YER fee:
+
+```java
+UUID txnId = recordLedgerEntryUseCase.recordTransferWithFee(
+    ahmedWalletId,              // FROM: sender
+    saraWalletId,               // TO: recipient
+    BigDecimal.valueOf(500),    // transfer amount
+    SystemWallets.FEES_YER,     // fee wallet
+    BigDecimal.valueOf(5),      // fee amount
+    transferId,
+    "Transfer to Sara"
+);
+```
+
+**Ledger Result:**
+
+```
+Entry 1: DEBIT  Ahmed's wallet  505 YER (pays 500 + 5 fee)
+Entry 2: CREDIT Sara's wallet   500 YER (receives 500)
+Entry 3: CREDIT FEES_YER          5 YER (platform earns fee)
+──────────────────────────────────────────
+Sum: 0 ✅
+```
+
+---
+
+### Database State After Migration
+
+Running the migration creates:
+
+```sql
+SELECT id, currency, balance, user_id FROM wallets WHERE user_id IS NULL;
+```
+
+| id                                   | currency | balance | user_id |
+| ------------------------------------ | -------- | ------- | ------- |
+| 00000000-0000-0000-0000-000000000001 | YER      | 0.0000  | NULL    |
+| 00000000-0000-0000-0000-000000000002 | SAR      | 0.0000  | NULL    |
+| 00000000-0000-0000-0000-000000000003 | USD      | 0.0000  | NULL    |
+| 00000000-0000-0000-0000-000000000011 | YER      | 0.0000  | NULL    |
+| 00000000-0000-0000-0000-000000000012 | SAR      | 0.0000  | NULL    |
+| 00000000-0000-0000-0000-000000000013 | USD      | 0.0000  | NULL    |
+
+---
+
+### Design Rationale
+
+**Q: Why use reserved UUIDs instead of generating random ones?**  
+**A:** Predictability. System wallets need to be referenced frequently in code. Using constants like `SystemWallets.FEES_YER` is much cleaner than looking up wallets by some arbitrary UUID.
+
+**Q: Why NULL user_id instead of a special "SYSTEM" user?**  
+**A:** Simpler and more explicit. NULL clearly indicates "not owned by a user". Creating a fake SYSTEM user complicates queries and authentication logic.
+
+**Q: Why start with 0 balance in production?**  
+**A:** Money should only exist when real cash enters the system. Starting with fake balances would be accounting fraud!
+
+**Q: How do we seed test data for development?**  
+**A:** Manually run UPDATE queries or create separate dev-only seed scripts that credit the liquidity wallets. This keeps production migrations clean.
+
+---
+
+**Next: Phase 2.4 Balance Management** 📊
