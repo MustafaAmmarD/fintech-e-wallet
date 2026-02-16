@@ -1208,4 +1208,443 @@ SELECT id, currency, balance, user_id FROM wallets WHERE user_id IS NULL;
 
 ---
 
-**Next: Phase 2.4 Balance Management** 📊
+---
+
+## 2.4 Balance Management — Discussion
+
+> [!NOTE]
+> Balance management is about **reading wallet balances efficiently** while ensuring they stay accurate through reconciliation.
+
+### The Balance Dilemma
+
+**Two Ways to Get Balance:**
+
+**Option A: Read from Wallet Table (Cached)**
+
+```sql
+SELECT balance FROM wallets WHERE id = ?;
+```
+
+- ✅ **Fast**: Single row lookup O(1)
+- ❌ **Risk**: Could become stale if bugs exist
+
+**Option B: Calculate from Ledger (Source of Truth)**
+
+```sql
+SELECT SUM(CASE
+    WHEN entry_type = 'CREDIT' THEN amount
+    ELSE -amount
+END) FROM ledger_entries WHERE wallet_id = ?;
+```
+
+- ✅ **Accurate**: Always correct
+- ❌ **Slow**: Scans all entries O(n)
+
+---
+
+### Our Hybrid Approach
+
+**Decision:** Use **cached balance** for reads, but **validate** with ledger periodically.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  READS (User requests balance)                          │
+│  → Use wallets.balance (fast, cached)                   │
+├─────────────────────────────────────────────────────────┤
+│  WRITES (Transactions)                                  │
+│  → Update wallets.balance immediately                   │
+│  → Record ledger entries (source of truth)              │
+├─────────────────────────────────────────────────────────┤
+│  RECONCILIATION (Nightly background job)                │
+│  → Compare wallets.balance vs SUM(ledger_entries)       │
+│  → Alert if mismatch detected                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Why This Works
+
+1. **Performance**: 99.9% of requests are fast (cached)
+2. **Accuracy**: Ledger is immutable source of truth
+3. **Safety**: Regular reconciliation catches bugs before they compound
+4. **Auditability**: If balance is wrong, ledger shows exact history
+
+---
+
+### Reconciliation Logic
+
+**What It Does:**
+
+```java
+For each wallet:
+    cachedBalance = wallet.getBalance()
+    ledgerBalance = SUM(ledger entries for this wallet)
+
+    if (cachedBalance != ledgerBalance) {
+        ALERT: "Wallet ${walletId} has balance mismatch!"
+        Log the discrepancy for investigation
+    }
+```
+
+**When to Run:**
+
+- **Nightly** (batch job at 2 AM)
+- **On-demand** (admin endpoint for debugging)
+- **Real-time** (optional: after every transaction for critical wallets)
+
+---
+
+### Use Cases We'll Build
+
+#### 1. `GetBalanceUseCase`
+
+**Simple balance retrieval:**
+
+```java
+public record BalanceResponse(
+    UUID walletId,
+    Currency currency,
+    BigDecimal balance,
+    WalletStatus status
+) {}
+
+@Service
+public class GetBalanceUseCase {
+    public BalanceResponse execute(UUID walletId) {
+        Wallet wallet = walletRepository.findById(walletId)...;
+        return new BalanceResponse(
+            wallet.getId(),
+            wallet.getCurrency(),
+            wallet.getBalance(),  // ← Cached value
+            wallet.getStatus()
+        );
+    }
+}
+```
+
+---
+
+#### 2. `GetAllWalletsUseCase`
+
+**List all wallets for a user:**
+
+```java
+public record WalletSummary(
+    UUID walletId,
+    Currency currency,
+    BigDecimal balance,
+    WalletStatus status
+) {}
+
+@Service
+public class GetAllWalletsUseCase {
+    public List<WalletSummary> execute(UUID userId) {
+        List<Wallet> wallets = walletRepository.findByUserId(userId);
+        return wallets.stream()
+            .map(w -> new WalletSummary(...))
+            .toList();
+    }
+}
+```
+
+---
+
+#### 3. `ReconcileBalanceUseCase`
+
+**Verify cached balance matches ledger:**
+
+```java
+public record ReconciliationResult(
+    UUID walletId,
+    BigDecimal cachedBalance,
+    BigDecimal ledgerBalance,
+    boolean matches,
+    BigDecimal discrepancy
+) {}
+
+@Service
+public class ReconcileBalanceUseCase {
+    public ReconciliationResult execute(UUID walletId) {
+        Wallet wallet = walletRepository.findById(walletId)...;
+
+        // Calculate from ledger
+        BigDecimal ledgerBalance = calculateBalanceFromLedger(walletId);
+
+        // Compare
+        boolean matches = wallet.getBalance().equals(ledgerBalance);
+        BigDecimal discrepancy = wallet.getBalance().subtract(ledgerBalance);
+
+        if (!matches) {
+            log.error("BALANCE MISMATCH: Wallet {}", walletId);
+            // Could trigger alert, email, Slack notification, etc.
+        }
+
+        return new ReconciliationResult(...);
+    }
+
+    private BigDecimal calculateBalanceFromLedger(UUID walletId) {
+        List<LedgerEntry> entries = ledgerRepository.findByWalletId(walletId);
+        BigDecimal sum = BigDecimal.ZERO;
+        for (LedgerEntry entry : entries) {
+            sum = (entry.getEntryType() == DEBIT)
+                ? sum.subtract(entry.getAmount())
+                : sum.add(entry.getAmount());
+        }
+        return sum;
+    }
+}
+```
+
+---
+
+### Edge Cases
+
+**Q: What if reconciliation finds a mismatch?**  
+**A:** For MVP, just log it loudly. In production, trigger alerts and mark wallet as FROZEN until admin investigates.
+
+**Q: Should we auto-fix mismatches?**  
+**A:** NO! If there's a mismatch, it indicates a BUG. Fixing it silently hides the bug. Instead, alert and investigate.
+
+**Q: What if a user has thousands of transactions?**  
+**A:** For large wallets, calculating from ledger becomes slow. Consider:
+
+- Adding indexes on `(wallet_id, created_at)`
+- Using database aggregation functions
+- Caching ledger sum separately
+
+---
+
+## 2.4 Balance Management — Implementation
+
+> [!NOTE]
+> **Status**: ✅ Completed
+
+### What We Built
+
+Three use cases for efficient balance management with reconciliation:
+
+---
+
+### Components Created
+
+#### 1. DTOs (Data Transfer Objects)
+
+**`BalanceResponse.java`:**
+
+```java
+public record BalanceResponse(
+    UUID walletId,
+    Currency currency,
+    BigDecimal balance,
+    WalletStatus status
+) {}
+```
+
+**`WalletSummary.java`:**
+
+```java
+public record WalletSummary(
+    UUID walletId,
+    Currency currency,
+    BigDecimal balance,
+    WalletStatus status
+) {}
+```
+
+**`ReconciliationResult.java`:**
+
+```java
+public record ReconciliationResult(
+    UUID walletId,
+    BigDecimal cachedBalance,
+    BigDecimal ledgerBalance,
+    boolean matches,
+    BigDecimal discrepancy
+) {}
+```
+
+---
+
+#### 2. Use Case: `GetBalanceUseCase.java`
+
+Retrieves wallet balance from cached value (fast):
+
+```java
+@Service
+public class GetBalanceUseCase {
+    public BalanceResponse execute(UUID walletId) {
+        Wallet wallet = walletsRepository.findById(walletId)...;
+        return new BalanceResponse(
+            wallet.getId(),
+            wallet.getCurrency(),
+            wallet.getBalance(),  // O(1) cached read
+            wallet.getStatus()
+        );
+    }
+}
+```
+
+**Performance:** O(1) — Single database row lookup
+
+---
+
+#### 3. Use Case: `GetAllWalletsUseCase.java`
+
+Lists all wallets for a user:
+
+```java
+@Service
+public class GetAllWalletsUseCase {
+    public List<WalletSummary> execute(UUID userId) {
+        List<Wallet> wallets = walletRepository.findByUserId(userId);
+        return wallets.stream()
+            .map(w -> new WalletSummary(...))
+            .toList();
+    }
+}
+```
+
+**Usage:** Display all 3 wallets (YER, SAR, USD) on user's dashboard
+
+---
+
+#### 4. Use Case: `ReconcileBalanceUseCase.java`
+
+Verifies cached balance matches ledger-calculated balance:
+
+```java
+@Service
+public class ReconcileBalanceUseCase {
+    public ReconciliationResult execute(UUID walletId) {
+        // 1. Get cached balance
+        BigDecimal cachedBalance = wallet.getBalance();
+
+        // 2. Calculate from ledger (source of truth)
+        BigDecimal ledgerBalance = calculateBalanceFromLedger(walletId);
+
+        // 3. Compare
+        boolean matches = cachedBalance.equals(ledgerBalance);
+        BigDecimal discrepancy = cachedBalance.subtract(ledgerBalance);
+
+        // 4. Alert if mismatch
+        if (!matches) {
+            log.error("BALANCE MISMATCH: Wallet {}, Discrepancy: {}",
+                wallet Id, discrepancy);
+        }
+
+        return new ReconciliationResult(...);
+    }
+
+    private BigDecimal calculateBalanceFromLedger(UUID walletId) {
+        List<LedgerEntry> entries = ledgerRepository.findByWalletId(walletId);
+        return entries.stream()
+            .map(e -> e.getEntryType() == DEBIT
+                ? e.getAmount().negate()
+                : e.getAmount())
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+}
+```
+
+**When to Use:**
+
+- Nightly batch job (recommended)
+- Admin endpoint for debugging
+- After every transaction (optional, for critical wallets)
+
+---
+
+### How It Works: Example Flow
+
+**Scenario 1: User Checks Balance**
+
+```java
+// User requests balance for their YER wallet
+BalanceResponse response = getBalanceUseCase.execute(ahmedYerWalletId);
+
+// Response:
+{
+    "walletId": "...",
+    "currency": "YER",
+    "balance": 1000.0000,  // ← Cached value, FAST!
+    "status": "ACTIVE"
+}
+```
+
+**Performance:** ~1ms (single SELECT query)
+
+---
+
+**Scenario 2: User Views All Wallets**
+
+```java
+// User opens wallet dashboard
+List<WalletSummary> wallets = getAllWalletsUseCase.execute(ahmedUserId);
+
+// Response:
+[
+    { "currency": "YER", "balance": 1000.00 },
+    { "currency": "SAR", "balance": 0.00 },
+    { "currency": "USD", "balance": 50.00 }
+]
+```
+
+---
+
+**Scenario 3: Nightly Reconciliation Job**
+
+```java
+// Scheduled job runs at 2 AM
+@Scheduled(cron = "0 0 2 * * *")
+public void reconcileAllWallets() {
+    List<Wallet> allWallets = walletRepository.findAll();
+
+    for (Wallet wallet : allWallets) {
+        ReconciliationResult result = reconcileBalanceUseCase.execute(wallet.getId());
+
+        if (!result.matches()) {
+            // Send alert to Slack/Email
+            alertService.send("Balance mismatch detected: " + result);
+        }
+    }
+}
+```
+
+**What It Detects:**
+
+- Bugs in transaction logic
+- Race conditions that slipped through
+- Database corruption
+- Manual SQL errors
+
+---
+
+### Design Rationale
+
+**Q: Why not just always calculate from ledger?**  
+**A:** Performance. For 1 million users checking balance 10 times/day = 10M queries. Calculating from ledger each time would scan potentially thousands of rows per query. Cached balance is O(1).
+
+**Q: What if cached balance is wrong?**  
+**A:** Reconciliation catches it. The ledger is immutable (source of truth), so we can always detect and fix discrepancies.
+
+**Q: Why not use database triggers to keep balance updated?**  
+**A:** We UPDATE the balance in application code (domain logic in `Wallet.debit()` / `Wallet.credit()`). This keeps business logic visible and testable.
+
+**Q: Can reconciliation auto-fix mismatches?**  
+**A:** NO! A mismatch indicates a BUG. Auto-fixing hides the root cause. Instead, alert admins to investigate. If needed, admins can manually run:
+
+```sql
+UPDATE wallets SET balance = (
+    SELECT SUM(CASE WHEN entry_type = 'CREDIT' THEN amount ELSE -amount END)
+    FROM ledger_entries WHERE wallet_id = wallets.id
+);
+```
+
+---
+
+**Next: Phase 2.5 Wallet API** 🌐
+
+```
+
+```
