@@ -22,6 +22,7 @@ public class RegisterUserUseCase {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final com.fintech.ewallet.wallet.application.CreateWalletUseCase createWalletUseCase;
 
     @Transactional
     public RegisterResponse execute(RegisterRequest request) {
@@ -52,7 +53,12 @@ public class RegisterUserUseCase {
 
         log.info("User registered successfully: {}", savedUser.getId());
 
-        // 6. Return response (no JWT token — user must login separately)
+        // 6. Create default wallets (YER, SAR, USD)
+        // Note: This runs in the same transaction, so if it fails, user creation rolls
+        // back.
+        createWalletUseCase.createWalletsForUser(savedUser.getId());
+
+        // 7. Return response (no JWT token — user must login separately)
         return new RegisterResponse(
                 savedUser.getId(),
                 savedUser.getPhoneNumber(),
