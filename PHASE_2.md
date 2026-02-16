@@ -1643,7 +1643,464 @@ UPDATE wallets SET balance = (
 
 ---
 
-**Next: Phase 2.5 Wallet API** 🌐
+---
+
+## 2.5 Wallet API — Discussion
+
+> [!NOTE]
+> The API layer exposes wallet functionality to external clients (mobile apps, web frontend).
+
+### What APIs Should We Expose?
+
+Based on typical user needs:
+
+1. **GET /wallets** — List all my wallets
+2. **GET /wallets/{id}** — Get specific wallet balance
+3. **GET /wallets/{id}/transactions** — View transaction history
+
+### API Design Principles
+
+**1. RESTful Conventions:**
+
+- Use plural nouns (`/wallets`, not `/wallet`)
+- Use HTTP methods correctly (GET for reads)
+- Use proper status codes (200, 404, 401, etc.)
+
+**2. Security:**
+
+- All endpoints require `@PreAuthorize("hasRole('USER')")`
+- User can only access their own wallets
+- JWT authentication via `Authorization: Bearer <token>`
+
+**3. Pagination:**
+
+- Transaction history uses pagination (10 items per page)
+- Cursor-based or offset-based (we'll use offset for simplicity)
+
+---
+
+### Proposed Endpoints
+
+#### 1. GET /api/v1/wallets
+
+**Description:** List all wallets for authenticated user
+
+**Request:**
+
+```http
+GET /api/v1/wallets
+Authorization: Bearer <jwt-token>
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "wallets": [
+    {
+      "walletId": "...",
+      "currency": "YER",
+      "balance": "1000.0000",
+      "status": "ACTIVE"
+    },
+    {
+      "walletId": "...",
+      "currency": "SAR",
+      "balance": "0.0000",
+      "status": "ACTIVE"
+    },
+    {
+      "walletId": "...",
+      "currency": "USD",
+      "balance": "50.0000",
+      "status": "ACTIVE"
+    }
+  ]
+}
+```
+
+---
+
+#### 2. GET /api/v1/wallets/{walletId}
+
+**Description:** Get balance for a specific wallet
+
+**Request:**
+
+```http
+GET /api/v1/wallets/{walletId}
+Authorization: Bearer <jwt-token>
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "walletId": "...",
+  "currency": "YER",
+  "balance": "1000.0000",
+  "status": "ACTIVE"
+}
+```
+
+**Error (403 Forbidden):**
+
+```json
+{
+  "timestamp": "2024-02-16T20:00:00Z",
+  "status": 403,
+  "error": "FORBIDDEN",
+  "message": "You don't have access to this wallet"
+}
+```
+
+---
+
+#### 3. GET /api/v1/wallets/{walletId}/transactions
+
+**Description:** Get transaction history for a wallet
+
+**Query Parameters:**
+
+- `page` (optional, default: 0)
+- `size` (optional, default: 10, max: 50)
+
+**Request:**
+
+```http
+GET /api/v1/wallets/{walletId}/transactions?page=0&size=10
+Authorization: Bearer <jwt-token>
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "transactions": [
+    {
+      "id": "...",
+      "transactionId": "...",
+      "type": "CREDIT",
+      "amount": "500.0000",
+      "balanceAfter": "1500.0000",
+      "referenceType": "TRANSFER",
+      "description": "Transfer from Ahmed",
+      "createdAt": "2024-02-16T15:30:00Z"
+    },
+    {
+      "id": "...",
+      "transactionId": "...",
+      "type": "DEBIT",
+      "amount": "200.0000",
+      "balanceAfter": "1000.0000",
+      "referenceType": "WITHDRAWAL",
+      "description": "Cash withdrawal",
+      "createdAt": "2024-02-16T14:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 10,
+  "totalElements": 25,
+  "totalPages": 3
+}
+```
+
+---
+
+### Security Considerations
+
+**Authorization Check:**
+
+Every endpoint must verify:
+
+1. User is authenticated (JWT valid)
+2. User owns the wallet being accessed
+
+```java
+@GetMapping("/wallets/{walletId}")
+public ResponseEntity<BalanceResponse> getBalance(
+    @PathVariable UUID walletId,
+    @AuthenticationPrincipal JwtUserDetails userDetails
+) {
+    // Verify ownership
+    Wallet wallet = walletRepository.findById(walletId)...;
+    if (!wallet.getUserId().equals(userDetails.getUserId())) {
+        throw new ForbiddenException("Not your wallet");
+    }
+
+    return ResponseEntity.ok(getBalanceUseCase.execute(walletId));
+}
+```
+
+---
+
+## 2.5 Wallet API — Implementation
+
+> [!NOTE]
+> **Status**: 🚧 In Progress
+
+### What We Built
+
+Three secure REST endpoints to expose wallet functionality to clients.
+
+---
+
+### Components Created
+
+#### 1. Controller: `WalletController.java`
+
+**Security:**
+
+- All endpoints require `@PreAuthorize("hasRole('USER')")`
+- Wallet ownership verified before access
+- Uses `@Authentication Principal UUID userId` from JWT
+
+**Endpoints:**
+
+**GET /api/v1/wallets** — List all user wallets
+
+```java
+@GetMapping
+@PreAuthorize("hasRole('USER')")
+public ResponseEntity<List<WalletSummary>> getAllWallets(
+    @AuthenticationPrincipal UUID userId
+) {
+    List<WalletSummary> wallets = getAllWalletsUseCase.execute(userId);
+    return ResponseEntity.ok(wallets);
+}
+```
+
+**GET /api/v1/wallets/{walletId}** — Get specific wallet balance
+
+```java
+@GetMapping("/{walletId}")
+@PreAuthorize("hasRole('USER')")
+public ResponseEntity<BalanceResponse> getBalance(
+    @PathVariable UUID walletId,
+    @AuthenticationPrincipal UUID userId
+) {
+    verifyWalletOwnership(walletId, userId);  // Security check
+    return ResponseEntity.ok(getBalanceUseCase.execute(walletId));
+}
+```
+
+**GET /api/v1/wallets/{walletId}/transactions** — Transaction history
+
+```java
+@GetMapping("/{walletId}/transactions")
+@PreAuthorize("hasRole('USER')")
+public ResponseEntity<List<TransactionResponse>> getTransactionHistory(
+    @PathVariable UUID walletId,
+    @RequestParam(defaultValue = "10") int size,
+    @AuthenticationPrincipal UUID userId
+) {
+    verifyWalletOwnership(walletId, userId);
+    int limit = Math.min(size, 50);  // Max 50 items
+    return ResponseEntity.ok(getTransactionHistoryUseCase.execute(walletId, limit));
+}
+```
+
+---
+
+#### 2. Use Case: `GetTransactionHistoryUseCase.java`
+
+Retrieves paginated transaction history:
+
+```java
+@Service
+public class GetTransactionHistoryUseCase {
+    public List<TransactionResponse> execute(UUID walletId, int limit) {
+        List<LedgerEntry> entries = ledgerRepository
+            .findByWalletIdOrderByCreatedAtDesc(walletId, limit);
+
+        return entries.stream()
+            .map(entry -> new TransactionResponse(...))
+            .toList();
+    }
+}
+```
+
+---
+
+#### 3. DTO: `TransactionResponse.java`
+
+```java
+public record TransactionResponse(
+    UUID id,
+    UUID transactionId,
+    EntryType type,             // DEBIT or CREDIT
+    BigDecimal amount,
+    BigDecimal balanceAfter,
+    ReferenceType referenceType, // TRANSFER, DEPOSIT, etc.
+    String description,
+    Instant createdAt
+) {}
+```
+
+---
+
+### How It Works: Example API Calls
+
+**1. List All Wallets**
+
+```bash
+curl -H "Authorization: Bearer <jwt-token>" \
+     http://localhost:8080/api/v1/wallets
+```
+
+**Response (200 OK):**
+
+```json
+[
+  {
+    "walletId": "uuid-1",
+    "currency": "YER",
+    "balance": "1000.0000",
+    "status": "ACTIVE"
+  },
+  {
+    "walletId": "uuid-2",
+    "currency": "SAR",
+    "balance": "0.0000",
+    "status": "ACTIVE"
+  },
+  {
+    "walletId": "uuid-3",
+    "currency": "USD",
+    "balance": "50.0000",
+    "status": "ACTIVE"
+  }
+]
+```
+
+---
+
+**2. Get Specific Wallet Balance**
+
+```bash
+curl -H "Authorization: Bearer <jwt-token>" \
+     http://localhost:8080/api/v1/wallets/uuid-1
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "walletId": "uuid-1",
+  "currency": "YER",
+  "balance": "1000.0000",
+  "status": "ACTIVE"
+}
+```
+
+**Error (403 Forbidden) — Trying to access someone else's wallet:**
+
+```json
+{
+  "timestamp": "2024-02-16T20:00:00Z",
+  "status": 403,
+  "error": "Forbidden",
+  "message": "Access denied: wallet belongs to another user"
+}
+```
+
+---
+
+**3. Get Transaction History**
+
+```bash
+curl -H "Authorization: Bearer <jwt-token>" \
+     "http://localhost:8080/api/v1/wallets/uuid-1/transactions?size=5"
+```
+
+**Response (200 OK):**
+
+```json
+[
+  {
+    "id": "entry-uuid-1",
+    "transactionId": "txn-uuid-1",
+    "type": "CREDIT",
+    "amount": "500.0000",
+    "balanceAfter": "1500.0000",
+    "referenceType": "TRANSFER",
+    "description": "Transfer from Ahmed",
+    "createdAt": "2024-02-16T15:30:00Z"
+  },
+  {
+    "id": "entry-uuid-2",
+    "transactionId": "txn-uuid-2",
+    "type": "DEBIT",
+    "amount": "200.0000",
+    "balanceAfter": "1000.0000",
+    "referenceType": "WITHDRAWAL",
+    "description": "Cash withdrawal",
+    "createdAt": "2024-02-16T14:00:00Z"
+  }
+]
+```
+
+---
+
+### Security Implementation
+
+**Ownership Verification:**
+
+```java
+private void verify WalletOwnership(UUID walletId, UUID userId) {
+    Wallet wallet = walletRepository.findById(walletId)
+        .orElseThrow(() -> new IllegalArgumentException("Wallet not found"));
+
+    if (!wallet.getUserId().equals(userId)) {
+        throw new SecurityException("Access denied: wallet belongs to another user");
+    }
+}
+```
+
+**Why it matters:**
+
+- Prevents users from viewing other users' wallets
+- Returns 403 Forbidden if ownership doesn't match
+- Checked before every wallet-specific operation
+
+---
+
+### Design Rationale
+
+**Q: Why not use pagination for transaction history?**  
+**A:** For MVP, we use simple limit-based fetching. Full pagination (with total pages, etc.) can be added later if needed.
+
+**Q: Why verify ownership in controller instead of use case?**  
+**A:** The use case is wallet-agnostic (can be used by admin tools). Authorization is an API concern, so it belongs in the controller layer.
+
+**Q: Why max 50 transactions per request?**  
+**A:** Prevent abuse. Users requesting `size=999999` would overload the database. Capping at 50 is reasonable for mobile apps.
+
+**Q: Can system wallets be accessed via this API?**  
+**A:** No. System wallets have `user_id = NULL`, so the ownership check will fail. Only admins can access system wallets (via separate admin API, to be built later).
+
+---
+
+## ✅ Phase 2 Complete!
+
+**All components implemented:**
+
+✅ 2.1 Wallet Domain (Wallet entity, CreateWalletUseCase)  
+✅ 2.2 Ledger System (LedgerEntry, RecordLedgerEntryUseCase)  
+✅ 2.3 System Wallets (6 wallets with reserved UUIDs)  
+✅ 2.4 Balance Management (GetBalanceUseCase, Reconciliation)  
+✅ 2.5 Wallet API (3 REST endpoints)
+
+**What we can do now:**
+
+- Users get 3 wallets (YER, SAR, USD) on registration
+- View balances via API
+- View transaction history
+- Double-entry ledger ensures perfect auditing
+- System wallets ready for deposits/withdrawals/fees
+- Reconciliation verifies cached balances
+
+**Next phase:** Transactions (transfers, deposits, withdrawals) — Coming in Phase 3! 🚀
 
 ```
 
