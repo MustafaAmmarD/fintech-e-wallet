@@ -46,6 +46,7 @@ public class JwtTokenProvider {
     public String generateAccessToken(User user) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + accessTokenExpirationMs);
+        String role = user.getRole() != null ? user.getRole().name() : "USER";
 
         return Jwts.builder()
                 .id(UUID.randomUUID().toString())
@@ -53,6 +54,7 @@ public class JwtTokenProvider {
                 .claim("phone", user.getPhoneNumber())
                 .claim("name", user.getFullName())
                 .claim("kyc", user.getKycStatus().name())
+                .claim("role", role)
                 .claim("type", "access")
                 .issuedAt(now)
                 .expiration(expiry)

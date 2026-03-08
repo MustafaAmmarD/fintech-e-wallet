@@ -31,6 +31,11 @@ public class WalletRepositoryAdapter implements WalletRepository {
     }
 
     @Override
+    public Optional<Wallet> findByIdForUpdate(UUID id) {
+        return jpaRepository.findByIdForUpdate(id).map(mapper::toDomain);
+    }
+
+    @Override
     public Optional<Wallet> findByUserIdAndCurrency(UUID userId, Currency currency) {
         return jpaRepository.findByUserIdAndCurrency(userId, currency).map(mapper::toDomain);
     }

@@ -1,9 +1,11 @@
 package com.fintech.ewallet.shared.config;
 
 import com.fintech.ewallet.identity.infrastructure.security.JwtAuthenticationFilter;
+import com.fintech.ewallet.shared.idempotency.IdempotencyFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -22,10 +24,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
         private final JwtAuthenticationFilter jwtAuthenticationFilter;
+        private final IdempotencyFilter idempotencyFilter;
 
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -49,14 +53,17 @@ public class SecurityConfig {
                                                                 "/api/v1/auth/refresh",
                                                                 "/api/v1/devices/request-otp",
                                                                 "/api/v1/devices/verify-otp",
+                                                                "/swagger-ui.html",
                                                                 "/swagger-ui/**",
+                                                                "/v3/api-docs/**",
                                                                 "/api-docs/**",
                                                                 "/actuator/health",
                                                                 "/h2-console/**")
                                                 .permitAll()
                                                 // Everything else requires authentication
                                                 .anyRequest().authenticated())
-                                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                                .addFilterAfter(idempotencyFilter, JwtAuthenticationFilter.class);
 
                 return http.build();
         }

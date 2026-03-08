@@ -3,11 +3,16 @@ package com.fintech.ewallet.wallet.api;
 import com.fintech.ewallet.wallet.application.GetAllWalletsUseCase;
 import com.fintech.ewallet.wallet.application.GetBalanceUseCase;
 import com.fintech.ewallet.wallet.application.GetTransactionHistoryUseCase;
+import com.fintech.ewallet.wallet.application.TransferMoneyUseCase;
 import com.fintech.ewallet.wallet.application.dto.BalanceResponse;
+import com.fintech.ewallet.wallet.application.dto.TransferRequest;
+import com.fintech.ewallet.wallet.application.dto.TransferResponse;
 import com.fintech.ewallet.wallet.application.dto.TransactionResponse;
 import com.fintech.ewallet.wallet.application.dto.WalletSummary;
 import com.fintech.ewallet.wallet.domain.Wallet;
 import com.fintech.ewallet.wallet.domain.WalletRepository;
+import io.swagger.v3.oas.annotations.Parameter;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,6 +33,7 @@ public class WalletController {
     private final GetAllWalletsUseCase getAllWalletsUseCase;
     private final GetBalanceUseCase getBalanceUseCase;
     private final GetTransactionHistoryUseCase getTransactionHistoryUseCase;
+    private final TransferMoneyUseCase transferMoneyUseCase;
     private final WalletRepository walletRepository;
 
     /**
@@ -37,7 +43,7 @@ public class WalletController {
     @GetMapping
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<List<WalletSummary>> getAllWallets(
-            @AuthenticationPrincipal UUID userId) {
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
         List<WalletSummary> wallets = getAllWalletsUseCase.execute(userId);
         return ResponseEntity.ok(wallets);
     }
@@ -50,7 +56,7 @@ public class WalletController {
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<BalanceResponse> getBalance(
             @PathVariable UUID walletId,
-            @AuthenticationPrincipal UUID userId) {
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
         // Verify wallet ownership
         verifyWalletOwnership(walletId, userId);
 
@@ -67,7 +73,7 @@ public class WalletController {
     public ResponseEntity<List<TransactionResponse>> getTransactionHistory(
             @PathVariable UUID walletId,
             @RequestParam(defaultValue = "10") int size,
-            @AuthenticationPrincipal UUID userId) {
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
         // Verify wallet ownership
         verifyWalletOwnership(walletId, userId);
 
@@ -76,6 +82,21 @@ public class WalletController {
 
         List<TransactionResponse> transactions = getTransactionHistoryUseCase.execute(walletId, limit);
         return ResponseEntity.ok(transactions);
+    }
+
+    /**
+     * POST /api/v1/wallets/transfer
+     * Transfer money from the authenticated user's wallet to another user wallet.
+     */
+    @PostMapping("/transfer")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<TransferResponse> transfer(
+            @Valid @RequestBody TransferRequest request,
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId,
+            @Parameter(name = "Idempotency-Key", required = true, description = "Unique key to prevent duplicate wallet transfer")
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        TransferResponse response = transferMoneyUseCase.execute(userId, request);
+        return ResponseEntity.ok(response);
     }
 
     /**

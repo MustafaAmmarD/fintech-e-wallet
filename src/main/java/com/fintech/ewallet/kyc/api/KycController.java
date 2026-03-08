@@ -3,16 +3,22 @@ package com.fintech.ewallet.kyc.api;
 import com.fintech.ewallet.kyc.application.GetKycStatusUseCase;
 import com.fintech.ewallet.kyc.application.UploadKycDocumentUseCase;
 import com.fintech.ewallet.kyc.application.dto.KycStatusResponse;
+import com.fintech.ewallet.kyc.application.dto.KycStatusResponse;
+
 import com.fintech.ewallet.kyc.application.dto.UploadDocumentRequest;
 import com.fintech.ewallet.kyc.application.dto.UploadDocumentResponse;
 import com.fintech.ewallet.kyc.domain.DocumentType;
+import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -29,11 +35,11 @@ public class KycController {
     /**
      * Upload a KYC document for verification.
      */
-    @PostMapping("/upload")
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<UploadDocumentResponse> uploadDocument(
-            @AuthenticationPrincipal UUID userId,
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId,
             @RequestParam("documentType") DocumentType documentType,
-            @RequestParam("file") MultipartFile file) {
+            @RequestPart("file") MultipartFile file) {
 
         UploadDocumentRequest request = new UploadDocumentRequest(documentType, file);
         UploadDocumentResponse response = uploadKycDocumentUseCase.execute(userId, request);
@@ -46,9 +52,10 @@ public class KycController {
      */
     @GetMapping("/status")
     public ResponseEntity<KycStatusResponse> getKycStatus(
-            @AuthenticationPrincipal UUID userId) {
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
 
         KycStatusResponse response = getKycStatusUseCase.execute(userId);
         return ResponseEntity.ok(response);
     }
+
 }

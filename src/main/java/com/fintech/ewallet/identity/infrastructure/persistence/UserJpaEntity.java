@@ -41,11 +41,20 @@ public class UserJpaEntity {
     @Column(name = "account_status", nullable = false, length = 20)
     private String accountStatus;
 
+    @Column(name = "role", nullable = false, length = 20)
+    private String role;
+
     @Column(name = "language", nullable = false, length = 5)
     private String language;
 
     @Column(name = "referral_code", unique = true, length = 20)
     private String referralCode;
+
+    @Column(name = "account_number", unique = true, length = 15)
+    private String accountNumber;
+
+    @Column(name = "show_full_name", nullable = false)
+    private boolean showFullName;
 
     @Column(name = "failed_login_attempts", nullable = false)
     private int failedLoginAttempts;

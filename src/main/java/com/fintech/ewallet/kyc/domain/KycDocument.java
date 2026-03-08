@@ -73,6 +73,16 @@ public class KycDocument {
         this.rejectionReason = reason;
     }
 
+    /**
+     * Move this document back to pending review.
+     */
+    public void markPendingReview() {
+        this.status = KycStatus.PENDING;
+        this.reviewedBy = null;
+        this.reviewedAt = null;
+        this.rejectionReason = null;
+    }
+
     // Getters
     public UUID getId() {
         return id;

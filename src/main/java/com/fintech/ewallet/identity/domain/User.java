@@ -1,5 +1,7 @@
 package com.fintech.ewallet.identity.domain;
 
+import com.fintech.ewallet.shared.util.AccountNumberGenerator;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -19,8 +21,11 @@ public class User {
     private String email; // Optional
     private KycStatus kycStatus;
     private AccountStatus accountStatus;
+    private UserRole role;
     private String language; // "ar" or "en"
     private String referralCode; // Unique code for referral program
+    private String accountNumber; // Luhn-validated 9-digit account number
+    private boolean showFullName;
     private int failedLoginAttempts;
     private Instant lastLoginAt;
     private Instant lockedUntil;
@@ -48,8 +53,11 @@ public class User {
         user.email = email;
         user.kycStatus = KycStatus.NONE;
         user.accountStatus = AccountStatus.ACTIVE;
+        user.role = UserRole.USER;
         user.language = (language != null) ? language : "ar";
         user.referralCode = referralCode;
+        user.accountNumber = AccountNumberGenerator.generate();
+        user.showFullName = true;
         user.failedLoginAttempts = 0;
         user.createdAt = Instant.now();
         user.updatedAt = Instant.now();
@@ -130,12 +138,24 @@ public class User {
         return accountStatus;
     }
 
+    public UserRole getRole() {
+        return role;
+    }
+
     public String getLanguage() {
         return language;
     }
 
     public String getReferralCode() {
         return referralCode;
+    }
+
+    public String getAccountNumber() {
+        return accountNumber;
+    }
+
+    public boolean isShowFullName() {
+        return showFullName;
     }
 
     public int getFailedLoginAttempts() {
@@ -192,12 +212,24 @@ public class User {
         this.accountStatus = accountStatus;
     }
 
+    public void setRole(UserRole role) {
+        this.role = role;
+    }
+
     public void setLanguage(String language) {
         this.language = language;
     }
 
     public void setReferralCode(String referralCode) {
         this.referralCode = referralCode;
+    }
+
+    public void setAccountNumber(String accountNumber) {
+        this.accountNumber = accountNumber;
+    }
+
+    public void setShowFullName(boolean showFullName) {
+        this.showFullName = showFullName;
     }
 
     public void setFailedLoginAttempts(int failedLoginAttempts) {

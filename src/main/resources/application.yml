@@ -1,6 +1,8 @@
 spring:
   application:
     name: fintech-ewallet
+  profiles:
+    default: dev
 
 server:
   port: 8080

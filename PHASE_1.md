@@ -27,7 +27,12 @@ The Spring Initializr-generated project is already in place with:
 - ✅ `EwalletApplication.java` entry point
 - ✅ `EwalletApplicationTests.java` basic test
 - ✅ Maven Wrapper (`mvnw.cmd`)
-- ✅ Build compiles successfully (Java 17)
+- ✅ Build compiles successfully (Java 21)
+
+### Implementation Note (2026-02-19)
+
+- Updated `pom.xml` compiler configuration to use `<release>${java.version}</release>`.
+- This removes mixed Java configuration and keeps build/runtime aligned on Java 21.
 
 ### What Phase 1.1 Will Deliver
 
@@ -459,16 +464,28 @@ public record RegisterRequest(
 
 ```java
 public record RegisterResponse(
-    UUID userId,
+    UUID id,
     String phoneNumber,
     String fullName,
-    String referralCode,
     String message
 ) {}
 ```
 
 > [!NOTE]
 > Registration does NOT return a JWT token. The user must login separately after registering. This is a deliberate security choice.
+
+### Implementation Note (2026-02-19)
+
+- Applied Yemen phone validation in auth DTOs using `^\+967\d{9}$`.
+- Applied optional email format validation in registration (`@Email`) when email is provided.
+- Integrated flow remains active: login request includes `deviceId` for trusted-device binding.
+- Registration API now returns `200 OK` with response shape: `id`, `phoneNumber`, `fullName`, `message`.
+- Login response now includes `tokenType: "Bearer"` for client compatibility.
+
+### Implementation Note (2026-02-20)
+
+- Registration no longer auto-creates wallets.
+- Register response message now explicitly tells users to complete KYC and await admin approval before wallets are activated.
 
 ---
 
@@ -920,6 +937,18 @@ String otp = String.format("%06d", new Random().nextInt(1000000)); // "042387"
 | `DELETE /api/v1/devices/{id}`     | DELETE | ✅   | Revoke a device (blacklists its refresh token) |
 | `PUT /api/v1/devices/{id}/rename` | PUT    | ✅   | Rename a device                                |
 
+### Implementation Note (2026-02-19)
+
+- Enforced OTP before trusting a new device at login.
+- Unknown device login now triggers OTP generation and returns `OTP_VERIFICATION_REQUIRED`.
+- Device is trusted only after `POST /api/v1/devices/verify-otp` succeeds.
+
+### Implementation Note (2026-02-20)
+
+- Fixed app startup blocker in device persistence by removing runtime dependency on `TrustedDeviceMapper` bean in `TrustedDeviceRepositoryAdapter`.
+- Added explicit manual mapping inside `TrustedDeviceRepositoryAdapter` for `TrustedDevice <-> TrustedDeviceJpaEntity`.
+- Kept `TrustedDeviceMapper` as non-Spring MapStruct mapper to avoid broken bean registration during boot.
+
 ---
 
 ### 1.4.6 — Refresh Token Schema Change
@@ -990,6 +1019,30 @@ Jwts.builder()
 ---
 
 ## 1.5 KYC Verification  Discussion
+
+### Implementation Note (2026-02-20)
+
+- Added admin approval endpoint: `POST /api/v1/kyc/admin/documents/{documentId}/approve`.
+- Approving a pending KYC document now sets user `kycStatus` to `VERIFIED`.
+- Wallets are now created at KYC approval time (not during registration).
+- KYC upload endpoint is explicitly `multipart/form-data` so Swagger shows real file-picker input for `file`.
+- Added admin queue/list endpoints to review accounts before approval:
+  - `GET /api/v1/kyc/admin/accounts/pending`
+  - `GET /api/v1/kyc/admin/accounts`
+  - `GET /api/v1/kyc/admin/accounts/{userId}`
+- Added account-level actions:
+  - `POST /api/v1/kyc/admin/accounts/{userId}/approve` (verify account and activate wallets)
+  - `POST /api/v1/kyc/admin/accounts/{userId}/pend` (move account back to pending)
+- Fixed pending queue consistency:
+  - `pending` list now includes only accounts with at least one pending document.
+  - `pend` action now resets user documents back to `PENDING` (clears previous review fields).
+
+### TODO Before Production (Security Hardening)
+
+- Enforce strict admin role access for all `/api/v1/kyc/admin/**` endpoints.
+- Add role claims (e.g., `ADMIN`) to JWT and map them to Spring Security authorities.
+- Protect admin endpoints with role checks (`hasRole('ADMIN')`) and return `403` for non-admin users.
+- Add selfie support as a separate `DocumentType` (e.g., `SELFIE`) and enforce ID + selfie pair before KYC approval.
 
 > [!NOTE]
 > Phase 1.5 implements **Know Your Customer (KYC)** verification  a legal requirement for fintech apps. Users must upload identity documents (passport, national ID) before they can create wallets or transfer money.
@@ -1418,7 +1471,7 @@ curl -X POST http://localhost:8080/api/v1/auth/register \
   ""id"": ""uuid..."",
   ""phoneNumber"": ""+967770000001"",
   ""fullName"": ""Test User"",
-  ""message"": ""User registered successfully""
+  ""message"": ""User registered successfully. Complete KYC and admin approval to activate wallets.""
 }
 `
 

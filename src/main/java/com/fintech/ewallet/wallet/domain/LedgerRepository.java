@@ -1,5 +1,7 @@
 package com.fintech.ewallet.wallet.domain;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,4 +25,10 @@ public interface LedgerRepository {
      * Find all ledger entries for a transaction.
      */
     List<LedgerEntry> findByTransactionId(UUID transactionId);
+
+    BigDecimal sumDebitsByWalletIdBetween(UUID walletId, Instant fromInclusive, Instant toExclusive);
+
+    long countDebitsByWalletIdBetween(UUID walletId, Instant fromInclusive, Instant toExclusive);
+
+    boolean existsFinancialTransactionForUser(UUID userId);
 }

@@ -10,13 +10,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -65,12 +66,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // Extract user ID
                 UUID userId = UUID.fromString(claims.getSubject());
 
-                // Create authentication object
+                String roleClaim = claims.get("role", String.class);
+
+                // Create authentication object with role-based authorities
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userId, // Principal = User ID
-                        null, // Credentials (password) not needed
-                        Collections.emptyList() // Authorities (roles) - add later if needed
-                );
+                        null, // Credentials (password) not needed after JWT validation
+                        buildAuthorities(roleClaim));
 
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
@@ -100,5 +102,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         return null;
+    }
+
+    private List<SimpleGrantedAuthority> buildAuthorities(String roleClaim) {
+        String normalizedRole = roleClaim == null ? "USER" : roleClaim.trim().toUpperCase();
+
+        return switch (normalizedRole) {
+            case "ADMIN" -> List.of(
+                    new SimpleGrantedAuthority("ROLE_ADMIN"),
+                    new SimpleGrantedAuthority("ROLE_AGENT"),
+                    new SimpleGrantedAuthority("ROLE_USER"));
+            case "AGENT" -> List.of(
+                    new SimpleGrantedAuthority("ROLE_AGENT"),
+                    new SimpleGrantedAuthority("ROLE_USER"));
+            default -> List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        };
     }
 }

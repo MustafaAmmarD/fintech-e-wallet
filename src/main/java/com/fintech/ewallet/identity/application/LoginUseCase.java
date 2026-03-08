@@ -1,6 +1,6 @@
 package com.fintech.ewallet.identity.application;
 
-import com.fintech.ewallet.device.domain.DeviceFingerprintService;
+import com.fintech.ewallet.device.domain.OtpService;
 import com.fintech.ewallet.device.domain.TrustedDevice;
 import com.fintech.ewallet.device.domain.TrustedDeviceRepository;
 import com.fintech.ewallet.identity.application.dto.LoginRequest;
@@ -8,9 +8,12 @@ import com.fintech.ewallet.identity.application.dto.LoginResponse;
 import com.fintech.ewallet.identity.domain.User;
 import com.fintech.ewallet.identity.domain.UserRepository;
 import com.fintech.ewallet.identity.infrastructure.security.JwtTokenProvider;
+import com.fintech.ewallet.referral.application.CompleteReferralUseCase;
 import com.fintech.ewallet.shared.exception.AccountLockedException;
 import com.fintech.ewallet.shared.exception.DeviceLimitExceededException;
 import com.fintech.ewallet.shared.exception.InvalidCredentialsException;
+import com.fintech.ewallet.shared.exception.OtpRateLimitExceededException;
+import com.fintech.ewallet.shared.exception.OtpVerificationRequiredException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +33,8 @@ public class LoginUseCase {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final TrustedDeviceRepository deviceRepository;
-    private final DeviceFingerprintService fingerprintService;
+    private final OtpService otpService;
+    private final CompleteReferralUseCase completeReferralUseCase;
 
     private static final int MAX_DEVICES_PER_USER = 5;
 
@@ -44,13 +48,13 @@ public class LoginUseCase {
 
         // 2. Check if account is locked
         if (user.isLocked()) {
-            log.warn("Login blocked — account locked for user: {}", user.getId());
+            log.warn("Login blocked - account locked for user: {}", user.getId());
             throw new AccountLockedException();
         }
 
         // 3. Check if account is active
         if (!user.isActive()) {
-            log.warn("Login blocked — account not active for user: {}", user.getId());
+            log.warn("Login blocked - account not active for user: {}", user.getId());
             throw new InvalidCredentialsException();
         }
 
@@ -62,12 +66,15 @@ public class LoginUseCase {
             throw new InvalidCredentialsException();
         }
 
-        // 5. Successful login — reset failed attempts
+        // 5. Successful login - reset failed attempts
         user.recordSuccessfulLogin();
         userRepository.save(user);
 
-        // 6. Register or update device
-        TrustedDevice device = registerOrUpdateDevice(user, request, httpRequest);
+        // 6. Resolve trusted device or require OTP for new device
+        TrustedDevice device = resolveTrustedDeviceOrRequireOtp(user, request, httpRequest);
+
+        // 6.1 Best-effort referral completion retry (handles missed runtime events)
+        tryCompleteReferralIfEligible(user.getId());
 
         // 7. Generate JWT tokens with deviceId
         String accessToken = jwtTokenProvider.generateAccessToken(user);
@@ -80,6 +87,7 @@ public class LoginUseCase {
         return new LoginResponse(
                 accessToken,
                 refreshToken,
+                "Bearer",
                 expiresIn,
                 new LoginResponse.UserInfo(
                         user.getId(),
@@ -89,11 +97,14 @@ public class LoginUseCase {
     }
 
     /**
-     * Register or update trusted device.
+     * Resolve trusted device for login.
+     * New devices must be OTP-verified before they become trusted.
      */
-    private TrustedDevice registerOrUpdateDevice(User user, LoginRequest request, HttpServletRequest httpRequest) {
+    private TrustedDevice resolveTrustedDeviceOrRequireOtp(
+            User user,
+            LoginRequest request,
+            HttpServletRequest httpRequest) {
         String deviceId = request.deviceId();
-        String fingerprint = fingerprintService.calculateFingerprint(httpRequest, deviceId);
 
         // Check if device already exists
         return deviceRepository.findByUserIdAndDeviceId(user.getId(), deviceId)
@@ -103,36 +114,34 @@ public class LoginUseCase {
                     return deviceRepository.save(existingDevice);
                 })
                 .orElseGet(() -> {
-                    // New device — check limit
+                    // New device: enforce OTP before trust
                     long deviceCount = deviceRepository.countByUserId(user.getId());
                     if (deviceCount >= MAX_DEVICES_PER_USER) {
                         throw new DeviceLimitExceededException();
                     }
 
-                    // Create new device
-                    String userAgent = httpRequest.getHeader("User-Agent");
-                    String deviceName = request.deviceName() != null
-                            ? request.deviceName()
-                            : fingerprintService.parseDeviceName(userAgent);
-                    String ipAddress = httpRequest.getRemoteAddr();
-                    boolean isPrimary = (deviceCount == 0);
+                    if (otpService.isRateLimitExceeded(user.getPhoneNumber())) {
+                        throw new OtpRateLimitExceededException();
+                    }
 
-                    TrustedDevice newDevice = TrustedDevice.create(
-                            user.getId(),
-                            deviceId,
-                            fingerprint,
-                            deviceName,
-                            userAgent,
-                            ipAddress,
-                            isPrimary);
-
-                    return deviceRepository.save(newDevice);
+                    otpService.generateAndSendOtp(user.getPhoneNumber());
+                    log.info("OTP required before trusting new device {} for user {}", deviceId, user.getId());
+                    throw new OtpVerificationRequiredException();
                 });
     }
 
     private String maskPhone(String phone) {
-        if (phone == null || phone.length() < 6)
+        if (phone == null || phone.length() < 6) {
             return "***";
+        }
         return phone.substring(0, 4) + "****" + phone.substring(phone.length() - 2);
+    }
+
+    private void tryCompleteReferralIfEligible(java.util.UUID userId) {
+        try {
+            completeReferralUseCase.executeIfEligible(userId);
+        } catch (Exception ex) {
+            log.error("Failed referral completion retry during login for userId={}", userId, ex);
+        }
     }
 }

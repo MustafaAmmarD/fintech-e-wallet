@@ -6,9 +6,9 @@ import java.util.UUID;
  * Response DTO returned after successful registration.
  */
 public record RegisterResponse(
-        UUID userId,
-        String phoneNumber,
-        String fullName,
-        String referralCode,
-        String message) {
+                UUID id,
+                String phoneNumber,
+                String fullName,
+                String accountNumber,
+                String message) {
 }

@@ -771,6 +771,7 @@ public class TransferService {
 │  4. Create default wallets (YER, SAR, USD with 0 balance)               │
 │  5. Register device as "trusted"                                         │
 └─────────────────────────────────────────────────────────────────────────┘
+
                     │
                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐

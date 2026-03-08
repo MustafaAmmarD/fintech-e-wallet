@@ -3,6 +3,7 @@ package com.fintech.ewallet.identity.infrastructure.persistence;
 import com.fintech.ewallet.identity.domain.AccountStatus;
 import com.fintech.ewallet.identity.domain.KycStatus;
 import com.fintech.ewallet.identity.domain.User;
+import com.fintech.ewallet.identity.domain.UserRole;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
@@ -18,12 +19,14 @@ public interface UserMapper {
 
     @Mapping(target = "kycStatus", source = "kycStatus", qualifiedByName = "kycStatusToString")
     @Mapping(target = "accountStatus", source = "accountStatus", qualifiedByName = "accountStatusToString")
+    @Mapping(target = "role", source = "role", qualifiedByName = "roleToString")
     UserJpaEntity toJpaEntity(User user);
 
     // ─── JPA Entity → Domain ──────────────────────────────────
 
     @Mapping(target = "kycStatus", source = "kycStatus", qualifiedByName = "stringToKycStatus")
     @Mapping(target = "accountStatus", source = "accountStatus", qualifiedByName = "stringToAccountStatus")
+    @Mapping(target = "role", source = "role", qualifiedByName = "stringToRole")
     User toDomain(UserJpaEntity entity);
 
     // ─── Enum Converters ──────────────────────────────────────
@@ -46,5 +49,15 @@ public interface UserMapper {
     @Named("stringToAccountStatus")
     default AccountStatus stringToAccountStatus(String status) {
         return status != null ? AccountStatus.valueOf(status) : null;
+    }
+
+    @Named("roleToString")
+    default String roleToString(UserRole role) {
+        return role != null ? role.name() : null;
+    }
+
+    @Named("stringToRole")
+    default UserRole stringToRole(String role) {
+        return role != null ? UserRole.valueOf(role) : null;
     }
 }

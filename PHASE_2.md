@@ -7,6 +7,16 @@
 
 ## Phase 2 Overview
 
+> Current execution status (MVP): **Phase 2 implementation and transfer validation complete (2026-02-22).**
+> Final status update: Steps `2.1` to `2.5` are complete; transfer scenarios were validated via Swagger.
+> Completion checklist:
+>
+> - `2.1` Wallet Creation: ✅ Complete
+> - `2.2` Double-Entry Ledger: ✅ Complete
+> - `2.3` System Wallets: ✅ Complete
+> - `2.4` Balance Management: ✅ Complete
+> - `2.5` Wallet API: ✅ Complete
+
 | Step | Title               | Scope                                       | Status     |
 | ---- | ------------------- | ------------------------------------------- | ---------- |
 | 2.1  | Wallet Creation     | Wallet entity, multi-currency, KYC gate     | ⬜ Pending |
@@ -18,6 +28,22 @@
 ---
 
 ## 2.1 Wallet Creation — Discussion
+
+### Implementation Note (2026-02-20)
+
+- Registration was updated to defer wallet provisioning.
+- Wallets are no longer auto-created during `POST /api/v1/auth/register`.
+- Wallet activation is now explicitly tied to KYC verification and admin approval flow.
+- Added approval path in KYC module: `POST /api/v1/kyc/admin/documents/{documentId}/approve`.
+- Added admin account review APIs for operations workflow:
+  - `GET /api/v1/kyc/admin/accounts/pending`
+  - `GET /api/v1/kyc/admin/accounts`
+  - `GET /api/v1/kyc/admin/accounts/{userId}`
+  - `POST /api/v1/kyc/admin/accounts/{userId}/approve`
+  - `POST /api/v1/kyc/admin/accounts/{userId}/pend`
+- Improved KYC pending-state consistency:
+  - `pend` now reopens account documents as `PENDING` for re-review.
+  - pending queue excludes accounts with zero pending documents.
 
 > [!NOTE]
 > A **wallet** is the most fundamental concept in our e-wallet system. It represents a user's money container — like a bank account, but digital and instant.
@@ -59,6 +85,22 @@ Each pocket is a separate "wallet." You can't mix currencies — you can only pu
 
 This is an important design decision. There are two approaches:
 
+### 2.1 MVP Decision Lock (2026-02-20)
+
+- Wallets are **not** created during `POST /api/v1/auth/register`.
+- Wallets are created only after KYC approval via `POST /api/v1/kyc/admin/accounts/{userId}/approve`.
+- Supported currencies for MVP are: `YER`, `SAR`, `USD`.
+- One wallet per currency per user.
+- KYC verification is required before wallet activation.
+
+### 2.1.2 Current Code Contract (Verified)
+
+- Wallet activation trigger is KYC account approval (`ApproveKycAccountUseCase` calls `createWalletsForUser`).
+- Registration does not call wallet provisioning directly.
+- Wallet provisioning creates `YER`, `SAR`, `USD` if missing (idempotent).
+- Database enforces one-wallet-per-currency-per-user with unique `(user_id, currency)`.
+- Wallet starts with `balance = 0` and `status = ACTIVE`.
+
 **Option A: Auto-create on registration**
 
 - User registers → System automatically creates 3 wallets (YER, SAR, USD)
@@ -80,26 +122,12 @@ This is an important design decision. There are two approaches:
 - User can add SAR or USD wallets later
 - ✅ Balance between convenience and flexibility
 
-### Questions for You (2.1)
+### 2.1 Decision Summary (Resolved)
 
-1. **Wallet Creation Strategy:** Which option do you prefer?
-   - A: Auto-create 3 wallets on registration
-   - B: User creates wallets on demand
-   - C: Auto-create YER, user adds others
-
-2. **Supported Currencies:** Which currencies should we support?
-   - YER (Yemeni Rial) — mandatory?
-   - SAR (Saudi Riyal) — yes/no?
-   - USD (US Dollar) — yes/no?
-   - Others? (EUR, GBP, AED?)
-
-3. **Wallet Limit:** How many wallets per currency per user?
-   - 1 wallet per currency (simplest)
-   - Multiple wallets per currency (like "Savings YER", "Daily YER")
-
-4. **KYC Requirement:** Must users complete KYC before creating a wallet?
-   - Yes (more secure, compliant)
-   - No (faster onboarding, verify later)
+1. **Wallet Creation Strategy:** Option A behavior moved from registration to KYC approval trigger.
+2. **Supported Currencies:** `YER`, `SAR`, `USD` only for MVP.
+3. **Wallet Limit:** One wallet per currency per user (enforced by unique constraint).
+4. **KYC Requirement:** Yes, KYC is required before wallet activation.
 
 ---
 
@@ -109,6 +137,9 @@ This is an important design decision. There are two approaches:
 > **Decisions finalized on 2026-02-16 based on user feedback**
 
 ### 2.1 Wallet Creation Strategy
+
+> [!WARNING]
+> This block reflects an older draft. The active MVP behavior is locked in **2.1 MVP Decision Lock (2026-02-20)** above: wallets are created on KYC account approval, not on registration.
 
 - **Decision**: **Auto-create 3 wallets (YER, SAR, USD) on registration.**
 - **KYC Logic**: Since wallets are created _during_ registration (before KYC), they will start in a `PENDING_KYC` or `RESTRICTED` status.
@@ -153,6 +184,9 @@ This is an important design decision. There are two approaches:
 
 > [!NOTE]
 > **Status**: ✅ Complete (2026-02-16)
+
+> [!WARNING]
+> This implementation narrative uses the earlier registration-trigger model. For current MVP behavior, follow **2.1 MVP Decision Lock (2026-02-20)** and **2.1.2 Current Code Contract (Verified)**.
 
 ### What We Built
 
@@ -519,6 +553,40 @@ Zero-Sum Check: -1000 + 1000 = 0 ✅
 
 ### Design Decisions (2.2 Ledger)
 
+### 2.2 MVP Decision Lock (2026-02-20)
+
+- Keep ledger entries **immutable** (append-only history).
+- Keep `ReferenceType` for MVP as: `TRANSFER`, `DEPOSIT`, `WITHDRAWAL`, `FEE`.
+- Keep **zero-sum validation mandatory** for each recorded transaction set.
+- Keep **cached wallet balance + ledger reconciliation** model for MVP.
+- Keep transaction limits enforced in ledger recording flow for MVP.
+
+### 2.2.2 Current Code Contract (Verified)
+
+- `RecordLedgerEntryUseCase` records double/triple entry transactions and runs zero-sum validation.
+- `LedgerEntry` is immutable in domain model (final fields, no setters).
+- `V6__create_ledger_entries_table.sql` enforces positive `amount` plus enum checks for `entry_type` and `reference_type`.
+- `GetTransactionHistoryUseCase` reads latest entries by wallet with a limit.
+- `ReconcileBalanceUseCase` recomputes wallet balance from ledger entries and compares against cached balance.
+- Wallet loading for debit/credit now uses explicit `PESSIMISTIC_WRITE` lock via `findByIdForUpdate`.
+- Wallet locking now uses stable UUID sort order before balance updates to reduce deadlock risk.
+- Limits enforced in `RecordLedgerEntryUseCase`:
+  - Minimum transfer amount: `1`
+  - Maximum transaction amount: `100000`
+  - Daily debit cap (KYC `VERIFIED`): `500000`
+  - Daily debit cap (non-verified): `10000`
+- Daily limit checks are skipped only for system wallets (`userId = null`).
+
+### 2.2 Decision Summary (Resolved for MVP)
+
+1. **Ledger Integrity:** Immutable append-only entries + zero-sum validation remain mandatory.
+2. **Reference Model:** Keep current four reference types in MVP.
+3. **Balance Strategy:** Keep cached balance for reads, ledger sum for reconciliation.
+4. **Concurrency + Limits:** Explicit row locking and MVP transaction limits are now enforced in ledger recording.
+
+> [!NOTE]
+> The historical decision list below is kept for traceability. If there is any conflict, follow the **2.2 MVP Decision Lock (2026-02-20)**.
+
 > [!IMPORTANT]
 > **Decisions finalized on 2026-02-16 based on user feedback**
 
@@ -602,6 +670,60 @@ Thread B waits... locks, reads 200, rejects (500 > 200) ✅
 
 > [!NOTE]
 > **Status**: 🚧 In Progress
+
+### Implementation Note (2026-02-21)
+
+- Added explicit DB locking path for wallets:
+  - `WalletRepository.findByIdForUpdate(...)`
+  - `WalletJpaRepository.findByIdForUpdate(...)` with `PESSIMISTIC_WRITE`
+- Updated ledger execution flow to lock wallets in stable UUID order before debit/credit.
+- Added ledger-based daily debit aggregation:
+  - `LedgerRepository.sumDebitsByWalletIdBetween(...)`
+  - `LedgerEntryJpaRepository.sumAmountByWalletIdAndEntryTypeBetween(...)`
+- Enforced MVP limits inside `RecordLedgerEntryUseCase`:
+  - Minimum amount = `1`
+  - Maximum per transaction = `100000`
+  - Daily debit cap = `500000` for `VERIFIED`, otherwise `10000`
+- System wallets (`userId = null`) are excluded from user daily-limit checks.
+
+### Live Swagger Verification (2026-02-21)
+
+Validated sequence end-to-end against running app (`http://localhost:8080`):
+
+1. **Register user**  
+   `POST /api/v1/auth/register`  
+   Result: account created.
+
+2. **Login from new device (before OTP)**  
+   `POST /api/v1/auth/login` with new `deviceId`  
+   Result: `400` with `OTP_VERIFICATION_REQUIRED`.
+
+3. **Verify OTP for new device**  
+   `POST /api/v1/devices/verify-otp`  
+   Result: device trusted successfully.
+
+4. **Login again from same device**  
+   `POST /api/v1/auth/login`  
+   Result: success with JWT tokens.
+
+5. **Check wallets before KYC approval**  
+   `GET /api/v1/wallets`  
+   Result: `0` wallets (as expected for deferred wallet activation).
+
+6. **Upload KYC document**  
+   `POST /api/v1/kyc/upload` (`multipart/form-data`, `documentType=NATIONAL_ID`, file attached)  
+   Result: document stored in `PENDING`.
+
+7. **Approve account KYC**  
+   `POST /api/v1/kyc/admin/accounts/{userId}/approve`  
+   Result: user `kycStatus = VERIFIED`.
+
+8. **Check wallets after KYC approval**  
+   `GET /api/v1/wallets`  
+   Result: `3` wallets created (`YER`, `SAR`, `USD`).
+
+> [!NOTE]
+> Ledger hardening changes (explicit row locking + amount/daily limits in `RecordLedgerEntryUseCase`) are active in application code, but they are not directly triggerable from current public Swagger endpoints until transfer/deposit APIs are wired to ledger recording in the next phase.
 
 ### What We Built
 
@@ -1657,13 +1779,14 @@ Based on typical user needs:
 1. **GET /wallets** — List all my wallets
 2. **GET /wallets/{id}** — Get specific wallet balance
 3. **GET /wallets/{id}/transactions** — View transaction history
+4. **POST /wallets/transfer** — Transfer money between user wallets
 
 ### API Design Principles
 
 **1. RESTful Conventions:**
 
 - Use plural nouns (`/wallets`, not `/wallet`)
-- Use HTTP methods correctly (GET for reads)
+- Use HTTP methods correctly (GET for reads, POST for transfer)
 - Use proper status codes (200, 404, 401, etc.)
 
 **2. Security:**
@@ -1807,6 +1930,51 @@ Authorization: Bearer <jwt-token>
 
 ---
 
+#### 4. POST /api/v1/wallets/transfer
+
+**Description:** Transfer money from the authenticated user's source wallet to another user wallet.
+
+**Request:**
+
+```http
+POST /api/v1/wallets/transfer
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "fromWalletId": "source-wallet-uuid",
+  "toWalletId": "destination-wallet-uuid",
+  "amount": 500,
+  "description": "Test transfer from Swagger"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "transactionId": "txn-uuid",
+  "referenceId": "transfer-ref-uuid",
+  "fromWalletId": "source-wallet-uuid",
+  "toWalletId": "destination-wallet-uuid",
+  "currency": "YER",
+  "amount": 500,
+  "description": "Test transfer from Swagger",
+  "createdAt": "2026-02-21T12:30:00Z"
+}
+```
+
+**Validation/Rules enforced by backend:**
+
+- Source wallet must belong to authenticated user.
+- Source and destination must be user wallets (not system wallets).
+- Amount must be >= `1` and <= `100000`.
+- Daily debit cap enforced by KYC status (`500000` verified, `10000` non-verified).
+
+---
+
 ### Security Considerations
 
 **Authorization Check:**
@@ -1839,9 +2007,40 @@ public ResponseEntity<BalanceResponse> getBalance(
 > [!NOTE]
 > **Status**: 🚧 In Progress
 
+### Implementation Note (2026-02-21)
+
+- Added new transfer endpoint: `POST /api/v1/wallets/transfer`.
+- Added transfer use case: `TransferMoneyUseCase`.
+- Added transfer DTOs:
+  - `TransferRequest`
+  - `TransferResponse`
+- Transfer endpoint routes through `RecordLedgerEntryUseCase` so row-locking and amount/daily limits are enforced in one place.
+
+> Final execution result: ✅ Complete (transfer endpoint fully validated in Swagger).
+
+### Swagger Validation Note (2026-02-22)
+
+Transfer testing was completed end-to-end in local development using Swagger UI against `POST /api/v1/wallets/transfer`.
+
+| Scenario                               | Payload highlight                   | Expected result                                                               | Actual    |
+| -------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------- | --------- |
+| Amount below minimum                   | `amount: 0.5`                       | `400 INVALID_ARGUMENT` + `Amount must be at least 1`                          | ✅ Passed |
+| Amount above maximum                   | `amount: 100001`                    | `400 INVALID_ARGUMENT` + `Amount exceeds max per transaction limit of 100000` | ✅ Passed |
+| Valid amount with empty sender balance | `amount: 100`                       | `400 BUSINESS_RULE_VIOLATION` + `Insufficient funds`                          | ✅ Passed |
+| Happy path transfer                    | funded sender wallet, `amount: 500` | `200 OK` + `transactionId` and `referenceId`                                  | ✅ Passed |
+
+Sample successful transfer:
+
+- `transactionId`: `1b8998d7-52ab-47d2-ace6-8d15c9951279`
+- `referenceId`: `905fbf02-06e6-4681-8c90-2371f8afcde8`
+- `fromWalletId`: `0aa4c3c9-ae81-4b7f-b46f-b44b9ab9fbfa`
+- `toWalletId`: `3208c64e-56af-4669-8009-425fe160453f`
+- `currency`: `YER`
+- `amount`: `500`
+
 ### What We Built
 
-Three secure REST endpoints to expose wallet functionality to clients.
+Four secure REST endpoints to expose wallet functionality to clients.
 
 ---
 
@@ -1897,6 +2096,19 @@ public ResponseEntity<List<TransactionResponse>> getTransactionHistory(
     verifyWalletOwnership(walletId, userId);
     int limit = Math.min(size, 50);  // Max 50 items
     return ResponseEntity.ok(getTransactionHistoryUseCase.execute(walletId, limit));
+}
+```
+
+**POST /api/v1/wallets/transfer** — Wallet-to-wallet transfer
+
+```java
+@PostMapping("/transfer")
+@PreAuthorize("hasRole('USER')")
+public ResponseEntity<TransferResponse> transfer(
+    @Valid @RequestBody TransferRequest request,
+    @AuthenticationPrincipal UUID userId
+) {
+    return ResponseEntity.ok(transferMoneyUseCase.execute(userId, request));
 }
 ```
 
@@ -2089,18 +2301,19 @@ private void verify WalletOwnership(UUID walletId, UUID userId) {
 ✅ 2.2 Ledger System (LedgerEntry, RecordLedgerEntryUseCase)  
 ✅ 2.3 System Wallets (6 wallets with reserved UUIDs)  
 ✅ 2.4 Balance Management (GetBalanceUseCase, Reconciliation)  
-✅ 2.5 Wallet API (3 REST endpoints)
+✅ 2.5 Wallet API (4 REST endpoints)
 
 **What we can do now:**
 
-- Users get 3 wallets (YER, SAR, USD) on registration
+- Users get 3 wallets (YER, SAR, USD) after KYC account approval
 - View balances via API
 - View transaction history
+- Transfer between user wallets via API
 - Double-entry ledger ensures perfect auditing
 - System wallets ready for deposits/withdrawals/fees
 - Reconciliation verifies cached balances
 
-**Next phase:** Transactions (transfers, deposits, withdrawals) — Coming in Phase 3! 🚀
+**Next phase:** Phase 3 — P2P Transfers, Deposits, Exchange → See `PHASE_3.md` (Step 3.1 ✅ Complete!)
 
 ```
 

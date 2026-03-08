@@ -9,6 +9,7 @@ import com.fintech.ewallet.device.application.dto.RequestOtpRequest;
 import com.fintech.ewallet.device.application.dto.VerifyOtpRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -33,7 +34,7 @@ public class DeviceController {
      * List all trusted devices for the authenticated user.
      */
     @GetMapping
-    public ResponseEntity<DeviceListResponse> listDevices(@AuthenticationPrincipal UUID userId) {
+    public ResponseEntity<DeviceListResponse> listDevices(@Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
         DeviceListResponse response = listDevicesUseCase.execute(userId);
         return ResponseEntity.ok(response);
     }
@@ -44,7 +45,7 @@ public class DeviceController {
     @DeleteMapping("/{deviceId}")
     public ResponseEntity<Void> revokeDevice(
             @PathVariable UUID deviceId,
-            @AuthenticationPrincipal UUID userId) {
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
 
         revokeDeviceUseCase.execute(deviceId, userId);
         return ResponseEntity.noContent().build();

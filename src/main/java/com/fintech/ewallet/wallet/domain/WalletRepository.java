@@ -9,6 +9,8 @@ public interface WalletRepository {
 
     Optional<Wallet> findById(UUID id);
 
+    Optional<Wallet> findByIdForUpdate(UUID id);
+
     Optional<Wallet> findByUserIdAndCurrency(UUID userId, Currency currency);
 
     List<Wallet> findByUserId(UUID userId);
