@@ -37,5 +37,7 @@ COPY --from=builder /app/target/*.jar app.jar
 # Expose the port that our Spring Boot app uses
 EXPOSE 8080
 
-# The command to run when the container starts
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# The command to run when the container starts.
+# We use 'sh -c' so that the $PORT environment variable can be evaluated by Linux.
+# We also limit memory (-Xmx300m) so Render's free 512MB container doesn't crash (OOMKill).
+ENTRYPOINT ["sh", "-c", "java -Xmx300m -Xss512k -Dserver.port=${PORT:-8080} -jar app.jar"]
