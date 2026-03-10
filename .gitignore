@@ -50,3 +50,9 @@ logs/
 # ─── Docker ───────────────────────────────────────────────────
 # Docker data volumes (persisted locally)
 ewallet_pgdata/
+
+# ─── Miscellaneous ────────────────────────────────────────────
+test_output.log
+startup4.log
+*.sql.bak
+.sts4-cache

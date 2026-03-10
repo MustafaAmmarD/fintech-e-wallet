@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # 1. The Spring Boot Application
+  app:
+    build:
+      context: . # Looks for the Dockerfile in the current directory
+    container_name: ewallet-app-prod
+    ports:
+      - "8080:8080"
+    environment:
+      # We tell Spring to use the 'prod' profile (application-prod.yml)
+      - SPRING_PROD_PROFILES_ACTIVE=prod
+      
+      # Database Connection 
+      # Notice we use 'postgres:5432' instead of 'localhost:5432'
+      # Docker handles this internal DNS automatically!
+      - DATABASE_URL=jdbc:postgresql://postgres:5432/ewallet_prod
+      - DATABASE_USERNAME=prod_user
+      - DATABASE_PASSWORD=${DB_PASSWORD:-super_secret_password} # Use your secure password here
+      
+      # Redis Connection
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      
+      # Security Secret
+      - JWT_SECRET=${JWT_SECRET:-your_super_long_and_very_secure_secret_key_for_production}
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ewallet-net
+
+  # 2. The PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ewallet-postgres-prod
+    environment:
+      - POSTGRES_DB=ewallet_prod
+      - POSTGRES_USER=prod_user
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-super_secret_password}
+    ports:
+      - "5432:5432" # Optional to expose for external DB tools like pgAdmin
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prod_user -d ewallet_prod -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ewallet-net
+
+  # 3. The Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ewallet-redis-prod
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secret}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ewallet-net
+
+# Define persistent storage
+volumes:
+  pgdata_prod:
+  redis_data_prod:
+
+# Define a private network for these containers to talk to each other
+networks:
+  ewallet-net:
+    driver: bridge
