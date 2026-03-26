@@ -78,13 +78,13 @@ With Heroku, you can push a Docker container or connect your GitHub repository, 
 ## Roadmap
 
 | Step | What We Do                        | What You Learn                                      |
-| ---- | --------------------------------- | --------------------------------------------------- |
+| ---- | --------------------------------- | --------------------------------------------------- | ------- |
 | 7.1  | Create `.gitignore`               | Protect sensitive files from being pushed to GitHub |
 | 7.2  | Create a `Dockerfile`             | Package your app into a Docker container            |
 | 7.3  | Create `docker-compose.prod.yml`  | Run the full stack (app + DB + Redis) in Docker     |
 | 7.4  | Create GitHub Actions CI Pipeline | Auto-run tests on every push                        |
-| 7.5  | Deploy to Render & Supabase       | Put your app live on the internet!                  |
-| 7.6  | Test the live deployment          | Verify everything works via the public URL          |
+| 7.5  | Deploy to Render & Supabase       | Put your app live on the internet!                  | ✅ Done |
+| 7.6  | Test the live deployment          | Verify everything works via the public URL          | ✅ Done |
 
 ---
 
@@ -210,19 +210,21 @@ If the code is perfect, GitHub shows a **Green Checkmark ✅**.
 
 ---
 
-## Step 7.5: Deploy to Render (App) + Supabase (DB)
+## Step 7.5: Deploy to Render (App) + Supabase (DB) ✅
 
 ### The Deployment Process
 
 1. Go to **[Supabase.com](https://supabase.com)** and create a free account.
 2. Click **New Project**, give it a name and a strong secure database password. _Save this password!_
-3. Once the project is created, go to **Project Settings -> Database**. Look for the **Connection String (URI)**. It will look like `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres`. Copy this!
+3. Once the project is created, go to **Project Settings -> Database**. Look for the **Connection String** section and click the **JDBC** tab.
 4. Sign up at **[Render.com](https://render.com)** using your GitHub account.
 5. In Render, create a new **Web Service** and connect it to your GitHub repository.
-6. Set the environment variables in Render:
-   - `DATABASE_URL` = (paste the URL from Supabase, replacing `[password]` with the real password you created)
+6. Set the following environment variables in Render:
+   - `DATABASE_URL` = (Copy the JDBC URL from Supabase. It looks like `jdbc:postgresql://aws-0-[...].supabase.com:6543/postgres`)
+   - `DATABASE_USERNAME` = `postgres.[your-project-ref]` (Also found in Supabase)
+   - `DATABASE_PASSWORD` = (The real password you created)
    - `JWT_SECRET` = (make up a long secure password)
-   - `SPRING_PROD_PROFILES_ACTIVE` = `prod`
+   - `SPRING_PROFILES_ACTIVE` = `prod`
 7. Render automatically building your `Dockerfile` and deploys your Java app!
 
 Every time you push to GitHub → Render detects the change → rebuilds → redeploys. Fully automatic! 🚀
