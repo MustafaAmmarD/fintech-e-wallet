@@ -7,6 +7,13 @@ spring:
     username: ${DATABASE_USERNAME}
     password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    # Fix: Render uses PgBouncer which does not support PostgreSQL prepared
+    # statements in transaction pooling mode. Setting prepareThreshold=0
+    # disables prepared statement caching entirely, preventing the
+    # "prepared statement already exists" Flyway error on startup.
+    hikari:
+      data-source-properties:
+        prepareThreshold: 0
   jpa:
     hibernate:
       ddl-auto: validate
