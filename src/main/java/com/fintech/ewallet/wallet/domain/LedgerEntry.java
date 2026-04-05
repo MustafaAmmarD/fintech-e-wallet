@@ -19,6 +19,7 @@ public class LedgerEntry {
     private final ReferenceType referenceType;
     private final UUID referenceId; // ID of the transfer/deposit/etc.
     private final String description;
+    private final String descriptionAr;
     private final Instant createdAt;
 
     // Constructor for new entry
@@ -31,7 +32,8 @@ public class LedgerEntry {
             Currency currency,
             ReferenceType referenceType,
             UUID referenceId,
-            String description) {
+            String description,
+            String descriptionAr) {
         this.id = UUID.randomUUID();
         this.transactionId = transactionId;
         this.walletId = walletId;
@@ -42,6 +44,7 @@ public class LedgerEntry {
         this.referenceType = referenceType;
         this.referenceId = referenceId;
         this.description = description;
+        this.descriptionAr = descriptionAr;
         this.createdAt = Instant.now();
     }
 
@@ -57,6 +60,7 @@ public class LedgerEntry {
             ReferenceType referenceType,
             UUID referenceId,
             String description,
+            String descriptionAr,
             Instant createdAt) {
         this.id = id;
         this.transactionId = transactionId;
@@ -68,6 +72,7 @@ public class LedgerEntry {
         this.referenceType = referenceType;
         this.referenceId = referenceId;
         this.description = description;
+        this.descriptionAr = descriptionAr;
         this.createdAt = createdAt;
     }
 
@@ -110,6 +115,10 @@ public class LedgerEntry {
 
     public String getDescription() {
         return description;
+    }
+
+    public String getDescriptionAr() {
+        return descriptionAr;
     }
 
     public Instant getCreatedAt() {

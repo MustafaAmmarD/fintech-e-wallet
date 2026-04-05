@@ -5,6 +5,7 @@ import com.fintech.ewallet.wallet.domain.LedgerEntry;
 import com.fintech.ewallet.wallet.domain.LedgerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -54,10 +55,24 @@ public class LedgerRepositoryAdapter implements LedgerRepository {
 
     @Override
     public List<LedgerEntry> findByWalletIdOrderByCreatedAtDesc(UUID walletId, int limit) {
-        return jpaRepository.findByWalletIdOrderByCreatedAtDesc(walletId, PageRequest.of(0, limit))
+        return jpaRepository.findByWalletIdOrderByCreatedAtDesc(walletId, PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "createdAt")))
                 .stream()
                 .map(mapper::toDomain)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<LedgerEntry> findByWalletIdWithFilters(UUID walletId, EntryType type, Instant startDate, Instant endDate, int offset, int limit) {
+        int page = offset / limit;
+        return jpaRepository.findByWalletIdWithFilters(walletId, type, startDate, endDate, PageRequest.of(page, limit))
+                .stream()
+                .map(mapper::toDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public long countByWalletIdWithFilters(UUID walletId, EntryType type, Instant startDate, Instant endDate) {
+        return jpaRepository.countByWalletIdWithFilters(walletId, type, startDate, endDate);
     }
 
     @Override

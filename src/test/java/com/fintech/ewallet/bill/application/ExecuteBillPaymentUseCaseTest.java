@@ -103,7 +103,7 @@ class ExecuteBillPaymentUseCaseTest {
         UUID transactionId = UUID.randomUUID();
         when(recordLedgerEntryUseCase.recordTransferWithFee(
                 eq(userWallet.getId()), eq(biller.getWalletId()), eq(new BigDecimal("1000")),
-                any(), eq(new BigDecimal("50")), any(), any(), anyString()))
+                any(), eq(new BigDecimal("50")), any(), any(), anyString(), anyString()))
                 .thenReturn(transactionId);
 
         // External Biller API succeeds
@@ -145,7 +145,7 @@ class ExecuteBillPaymentUseCaseTest {
 
         // Verify ledger and external API were NEVER called
         verify(recordLedgerEntryUseCase, never()).recordTransferWithFee(any(), any(), any(), any(), any(), any(), any(),
-                any());
+                any(), any());
         verify(mockBillerService, never()).processPayment(anyString(), anyString(), any());
     }
 
@@ -160,7 +160,7 @@ class ExecuteBillPaymentUseCaseTest {
         when(walletRepository.findByUserIdAndCurrency(userId, Currency.YER)).thenReturn(Optional.of(userWallet));
 
         // Ledger passes
-        when(recordLedgerEntryUseCase.recordTransferWithFee(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(recordLedgerEntryUseCase.recordTransferWithFee(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(UUID.randomUUID());
 
         // But External API FAILS!

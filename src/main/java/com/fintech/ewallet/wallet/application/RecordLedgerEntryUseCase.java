@@ -59,7 +59,8 @@ public class RecordLedgerEntryUseCase {
             BigDecimal amount,
             ReferenceType referenceType,
             UUID referenceId,
-            String description) {
+            String description,
+            String descriptionAr) {
         log.info("Recording double-entry transaction from {} to {} amount {}", fromWalletId, toWalletId, amount);
 
         validateWalletPair(fromWalletId, toWalletId);
@@ -93,7 +94,8 @@ public class RecordLedgerEntryUseCase {
                 currency,
                 referenceType,
                 referenceId,
-                description + " (sent)"));
+                description + " (sent)",
+                descriptionAr != null ? descriptionAr + " (مرسل)" : null));
 
         entries.add(new LedgerEntry(
                 transactionId,
@@ -104,7 +106,8 @@ public class RecordLedgerEntryUseCase {
                 currency,
                 referenceType,
                 referenceId,
-                description + " (received)"));
+                description + " (received)",
+                descriptionAr != null ? descriptionAr + " (مستلم)" : null));
 
         ledgerRepository.saveAll(entries);
         validateZeroSum(entries);
@@ -135,7 +138,8 @@ public class RecordLedgerEntryUseCase {
             BigDecimal feeAmount,
             ReferenceType referenceType,
             UUID referenceId,
-            String description) {
+            String description,
+            String descriptionAr) {
         log.info("Recording transfer with fee from {} to {} amount {} fee {}", fromWalletId, toWalletId, transferAmount,
                 feeAmount);
 
@@ -180,7 +184,8 @@ public class RecordLedgerEntryUseCase {
                 currency,
                 referenceType,
                 referenceId,
-                description + " (sent with fee)"));
+                description + " (sent with fee)",
+                descriptionAr != null ? descriptionAr + " (مرسل مع الرسوم)" : null));
 
         entries.add(new LedgerEntry(
                 transactionId,
@@ -191,7 +196,8 @@ public class RecordLedgerEntryUseCase {
                 currency,
                 referenceType,
                 referenceId,
-                description + " (received)"));
+                description + " (received)",
+                descriptionAr != null ? descriptionAr + " (مستلم)" : null));
 
         entries.add(new LedgerEntry(
                 transactionId,
@@ -202,7 +208,8 @@ public class RecordLedgerEntryUseCase {
                 currency,
                 ReferenceType.FEE,
                 referenceId,
-                "Transaction fee"));
+                "Transaction fee",
+                "رسوم العملية"));
 
         ledgerRepository.saveAll(entries);
         validateZeroSum(entries);
@@ -236,7 +243,8 @@ public class RecordLedgerEntryUseCase {
             BigDecimal toAmount,
             BigDecimal feeAmount,
             UUID referenceId,
-            String description) {
+            String description,
+            String descriptionAr) {
         log.info("Recording exchange transaction from {} to {}. fromAmount={}, toAmount={}, feeAmount={}",
                 userSourceWalletId, userDestinationWalletId, fromAmount, toAmount, feeAmount);
 
@@ -308,7 +316,8 @@ public class RecordLedgerEntryUseCase {
                 sourceCurrency,
                 ReferenceType.EXCHANGE,
                 referenceId,
-                description + " (source debit + fee)"));
+                description + " (source debit + fee)",
+                descriptionAr != null ? descriptionAr + " (خصم مرسل + رسوم)" : null));
 
         entries.add(new LedgerEntry(
                 transactionId,
@@ -319,7 +328,8 @@ public class RecordLedgerEntryUseCase {
                 sourceCurrency,
                 ReferenceType.EXCHANGE,
                 referenceId,
-                description + " (source liquidity credit)"));
+                description + " (source liquidity credit)",
+                descriptionAr != null ? descriptionAr + " (رصيد سيولة مرسل)" : null));
 
         entries.add(new LedgerEntry(
                 transactionId,
@@ -330,7 +340,8 @@ public class RecordLedgerEntryUseCase {
                 sourceCurrency,
                 ReferenceType.FEE,
                 referenceId,
-                "Exchange fee"));
+                "Exchange fee",
+                "رسوم الصرف"));
 
         entries.add(new LedgerEntry(
                 transactionId,
@@ -341,7 +352,8 @@ public class RecordLedgerEntryUseCase {
                 destinationCurrency,
                 ReferenceType.EXCHANGE,
                 referenceId,
-                description + " (destination liquidity debit)"));
+                description + " (destination liquidity debit)",
+                descriptionAr != null ? descriptionAr + " (خصم سيولة مستلم)" : null));
 
         entries.add(new LedgerEntry(
                 transactionId,
@@ -352,7 +364,8 @@ public class RecordLedgerEntryUseCase {
                 destinationCurrency,
                 ReferenceType.EXCHANGE,
                 referenceId,
-                description + " (destination credit)"));
+                description + " (destination credit)",
+                descriptionAr != null ? descriptionAr + " (رصيد مستلم)" : null));
 
         ledgerRepository.saveAll(entries);
         validateZeroSum(entries);

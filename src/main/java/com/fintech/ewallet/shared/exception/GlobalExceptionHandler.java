@@ -11,13 +11,20 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.time.Instant;
 import java.util.List;
 
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import lombok.RequiredArgsConstructor;
+
 /**
  * Global exception handler for all REST controllers.
  * Converts exceptions into standardized {@link ApiErrorResponse} format.
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+        private final MessageSource messageSource;
 
         /**
          * Handle domain/business-rule exceptions.
@@ -26,14 +33,17 @@ public class GlobalExceptionHandler {
         public ResponseEntity<ApiErrorResponse> handleDomainException(
                         DomainException ex, HttpServletRequest request) {
 
-                log.warn("Domain error: [{}] {}", ex.getErrorCode(), ex.getMessage());
+                String localizedMessage = messageSource.getMessage(
+                        ex.getErrorCode(), null, ex.getMessage(), LocaleContextHolder.getLocale());
+
+                log.warn("Domain error: [{}] {}", ex.getErrorCode(), localizedMessage);
 
                 ApiErrorResponse response = ApiErrorResponse.builder()
                                 .timestamp(Instant.now())
                                 .status(HttpStatus.BAD_REQUEST.value())
                                 .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
                                 .code(ex.getErrorCode())
-                                .message(ex.getMessage())
+                                .message(localizedMessage)
                                 .path(request.getRequestURI())
                                 .build();
 
@@ -60,7 +70,7 @@ public class GlobalExceptionHandler {
                                 .status(HttpStatus.BAD_REQUEST.value())
                                 .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
                                 .code("VALIDATION_FAILED")
-                                .message("Request validation failed")
+                                .message(messageSource.getMessage("error.validation.invalid", null, "Request validation failed", LocaleContextHolder.getLocale()))
                                 .details(fieldErrors)
                                 .path(request.getRequestURI())
                                 .build();
@@ -82,7 +92,7 @@ public class GlobalExceptionHandler {
                                 .status(HttpStatus.BAD_REQUEST.value())
                                 .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
                                 .code("INVALID_ARGUMENT")
-                                .message(ex.getMessage())
+                                .message(ex.getMessage()) // IllegalArgument usually holds dev-message, not user-safe
                                 .path(request.getRequestURI())
                                 .build();
 
@@ -104,7 +114,7 @@ public class GlobalExceptionHandler {
                                 .status(HttpStatus.BAD_REQUEST.value())
                                 .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
                                 .code("BUSINESS_RULE_VIOLATION")
-                                .message(ex.getMessage())
+                                .message(ex.getMessage()) // Can map similarly if keys are passed
                                 .path(request.getRequestURI())
                                 .build();
 
@@ -121,12 +131,15 @@ public class GlobalExceptionHandler {
 
                 log.error("Unexpected error at {}: {}", request.getRequestURI(), ex.getMessage(), ex);
 
+                String localizedMessage = messageSource.getMessage(
+                        "error.internal", null, "An unexpected error occurred", LocaleContextHolder.getLocale());
+
                 ApiErrorResponse response = ApiErrorResponse.builder()
                                 .timestamp(Instant.now())
                                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                                 .error(HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase())
                                 .code("INTERNAL_ERROR")
-                                .message("An unexpected error occurred")
+                                .message(localizedMessage)
                                 .path(request.getRequestURI())
                                 .build();
 

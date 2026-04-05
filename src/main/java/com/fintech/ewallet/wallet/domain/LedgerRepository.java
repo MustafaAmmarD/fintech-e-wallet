@@ -10,6 +10,8 @@ public interface LedgerRepository {
 
     List<LedgerEntry> saveAll(List<LedgerEntry> entries);
 
+
+
     /**
      * Find all ledger entries for a wallet.
      */
@@ -20,6 +22,16 @@ public interface LedgerRepository {
      * limited.
      */
     List<LedgerEntry> findByWalletIdOrderByCreatedAtDesc(UUID walletId, int limit);
+
+    /**
+     * Find filtered and paginated ledger entries for a wallet.
+     */
+    List<LedgerEntry> findByWalletIdWithFilters(UUID walletId, EntryType type, Instant startDate, Instant endDate, int offset, int limit);
+    
+    /**
+     * Count filtered ledger entries for a wallet.
+     */
+    long countByWalletIdWithFilters(UUID walletId, EntryType type, Instant startDate, Instant endDate);
 
     /**
      * Find all ledger entries for a transaction.

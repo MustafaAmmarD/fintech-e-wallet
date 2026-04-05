@@ -14,4 +14,6 @@ public interface TransactionLimitJpaRepository extends JpaRepository<Transaction
             UserTier userTier,
             LimitOperationType operationType,
             Currency currency);
+
+    List<TransactionLimitJpaEntity> findByUserTierAndActiveTrue(UserTier userTier);
 }

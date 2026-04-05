@@ -8,5 +8,8 @@ public enum DocumentType {
     NATIONAL_ID,
     DRIVERS_LICENSE,
     RESIDENCE_PERMIT,
+    ID_FRONT,
+    ID_BACK,
+    SELFIE,
     OTHER
 }

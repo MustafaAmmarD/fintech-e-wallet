@@ -74,7 +74,8 @@ public class ExecuteBillPaymentUseCase {
                     flatFeeAmount,
                     ReferenceType.BILL_PAYMENT,
                     transactionId,
-                    "Bill Payment: " + biller.getName() + " - " + request.customerAccountNumber());
+                    "Bill Payment: " + biller.getName() + " - " + request.customerAccountNumber(),
+                    "دفع فاتورة: " + (biller.getNameAr() != null ? biller.getNameAr() : biller.getName()) + " - " + request.customerAccountNumber());
         } catch (Exception e) {
             log.error("Failed to process ledger entries for bill payment: {}", e.getMessage());
             throw new IllegalStateException("Payment failed: " + M(e.getMessage()));
@@ -123,7 +124,7 @@ public class ExecuteBillPaymentUseCase {
                 billPayment.getId(),
                 billPayment.getReferenceNo(),
                 biller.getName(),
-                biller.getCategory(),
+                biller.getCategory() != null ? biller.getCategory().name() : null,
                 billPayment.getCustomerAccountNumber(),
                 billPayment.getAmount(),
                 billPayment.getFeeAmount(),

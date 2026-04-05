@@ -1,13 +1,10 @@
 package com.fintech.ewallet.kyc.api;
 
 import com.fintech.ewallet.kyc.application.GetKycStatusUseCase;
-import com.fintech.ewallet.kyc.application.UploadKycDocumentUseCase;
+import com.fintech.ewallet.kyc.application.UploadBatchKycDocumentsUseCase;
 import com.fintech.ewallet.kyc.application.dto.KycStatusResponse;
-import com.fintech.ewallet.kyc.application.dto.KycStatusResponse;
-
-import com.fintech.ewallet.kyc.application.dto.UploadDocumentRequest;
+import com.fintech.ewallet.kyc.application.dto.UploadBatchDocumentRequest;
 import com.fintech.ewallet.kyc.application.dto.UploadDocumentResponse;
-import com.fintech.ewallet.kyc.domain.DocumentType;
 import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -15,7 +12,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -29,20 +25,21 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class KycController {
 
-    private final UploadKycDocumentUseCase uploadKycDocumentUseCase;
+    private final UploadBatchKycDocumentsUseCase uploadBatchKycDocumentsUseCase;
     private final GetKycStatusUseCase getKycStatusUseCase;
 
     /**
-     * Upload a KYC document for verification.
+     * Upload KYC documents for verification (Front ID, Back ID, Selfie).
      */
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<UploadDocumentResponse> uploadDocument(
+    public ResponseEntity<List<UploadDocumentResponse>> uploadDocuments(
             @Parameter(hidden = true) @AuthenticationPrincipal UUID userId,
-            @RequestParam("documentType") DocumentType documentType,
-            @RequestPart("file") MultipartFile file) {
+            @RequestPart("idFront") MultipartFile idFront,
+            @RequestPart("idBack") MultipartFile idBack,
+            @RequestPart("selfie") MultipartFile selfie) {
 
-        UploadDocumentRequest request = new UploadDocumentRequest(documentType, file);
-        UploadDocumentResponse response = uploadKycDocumentUseCase.execute(userId, request);
+        UploadBatchDocumentRequest request = new UploadBatchDocumentRequest(idFront, idBack, selfie);
+        List<UploadDocumentResponse> response = uploadBatchKycDocumentsUseCase.execute(userId, request);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -57,5 +54,4 @@ public class KycController {
         KycStatusResponse response = getKycStatusUseCase.execute(userId);
         return ResponseEntity.ok(response);
     }
-
 }

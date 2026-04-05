@@ -6,7 +6,6 @@ import com.fintech.ewallet.bill.application.GetBillersUseCase;
 import com.fintech.ewallet.bill.application.PreviewBillPaymentUseCase;
 import com.fintech.ewallet.bill.application.dto.BillExecuteResponse;
 import com.fintech.ewallet.bill.application.dto.BillerResponse;
-import com.fintech.ewallet.bill.domain.BillerCategory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -95,8 +94,8 @@ class BillPaymentControllerTest {
     void getBillersShouldReturn200() throws Exception {
         // Arrange
         List<BillerResponse> billers = List.of(
-                new BillerResponse(UUID.randomUUID(), "YEMEN_MOBILE", "Yemen Mobile", BillerCategory.TELECOM, "YER"),
-                new BillerResponse(UUID.randomUUID(), "ADEN_NET", "Aden Net", BillerCategory.INTERNET, "YER"));
+                new BillerResponse(UUID.randomUUID(), "YEMEN_MOBILE", "Yemen Mobile", "TELECOM", "YER"),
+                new BillerResponse(UUID.randomUUID(), "ADEN_NET", "Aden Net", "INTERNET", "YER"));
         when(getBillersUseCase.execute(any())).thenReturn(billers);
 
         // Act & Assert
@@ -119,7 +118,7 @@ class BillPaymentControllerTest {
         // Arrange
         UUID paymentId = UUID.randomUUID();
         BillExecuteResponse mockResponse = new BillExecuteResponse(
-                paymentId, "BP-20260308-ABC123", "Yemen Mobile", BillerCategory.TELECOM,
+                paymentId, "BP-20260308-ABC123", "Yemen Mobile", "TELECOM",
                 "770000000", new BigDecimal("1000"), new BigDecimal("50"),
                 new BigDecimal("1050"), "YER", "COMPLETED", Instant.now());
         when(executeBillPaymentUseCase.execute(any(), any())).thenReturn(mockResponse);

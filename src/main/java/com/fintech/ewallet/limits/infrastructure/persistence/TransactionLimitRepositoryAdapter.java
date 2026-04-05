@@ -25,4 +25,12 @@ public class TransactionLimitRepositoryAdapter implements TransactionLimitReposi
                 .map(mapper::toDomain)
                 .toList();
     }
+
+    @Override
+    public List<TransactionLimit> findAllActiveByUserTier(UserTier userTier) {
+        return jpaRepository.findByUserTierAndActiveTrue(userTier)
+                .stream()
+                .map(mapper::toDomain)
+                .toList();
+    }
 }

@@ -72,7 +72,8 @@ public class CompleteReferralUseCase {
                 REFERRER_REWARD,
                 ReferenceType.REFERRAL,
                 referral.getId(),
-                "Referral reward for referrer");
+                "Referral reward for referrer",
+                "مكافأة دعوة للمرسل");
 
         recordLedgerEntryUseCase.recordDoubleEntry(
                 SystemWallets.getLiquidityWallet(Currency.YER),
@@ -80,7 +81,8 @@ public class CompleteReferralUseCase {
                 REFEREE_REWARD,
                 ReferenceType.REFERRAL,
                 referral.getId(),
-                "Referral reward for referee");
+                "Referral reward for referee",
+                "مكافأة دعوة للمستلم");
 
         referral.markRewarded(REFERRER_REWARD, REFEREE_REWARD);
         referralRepository.save(referral);

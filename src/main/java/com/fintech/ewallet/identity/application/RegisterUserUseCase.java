@@ -42,7 +42,12 @@ public class RegisterUserUseCase {
                 passwordHash,
                 request.email(),
                 request.language(),
-                referralCode);
+                referralCode,
+                request.englishFullName(),
+                request.gender(),
+                request.dateOfBirth(),
+                request.idNumber(),
+                request.maritalStatus());
 
         User savedUser = userRepository.save(user);
         linkReferralUseCase.execute(savedUser.getId(), request.referralCode());

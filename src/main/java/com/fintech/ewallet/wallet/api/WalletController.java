@@ -1,5 +1,6 @@
 package com.fintech.ewallet.wallet.api;
 
+import com.fintech.ewallet.shared.dto.PaginatedResponse;
 import com.fintech.ewallet.wallet.application.GetAllWalletsUseCase;
 import com.fintech.ewallet.wallet.application.GetBalanceUseCase;
 import com.fintech.ewallet.wallet.application.GetTransactionHistoryUseCase;
@@ -9,16 +10,19 @@ import com.fintech.ewallet.wallet.application.dto.TransferRequest;
 import com.fintech.ewallet.wallet.application.dto.TransferResponse;
 import com.fintech.ewallet.wallet.application.dto.TransactionResponse;
 import com.fintech.ewallet.wallet.application.dto.WalletSummary;
+import com.fintech.ewallet.wallet.domain.EntryType;
 import com.fintech.ewallet.wallet.domain.Wallet;
 import com.fintech.ewallet.wallet.domain.WalletRepository;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -66,22 +70,28 @@ public class WalletController {
 
     /**
      * GET /api/v1/wallets/{walletId}/transactions
-     * Get transaction history for a wallet.
+     * Get paginated transaction history for a wallet with optional filtering.
      */
     @GetMapping("/{walletId}/transactions")
     @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<List<TransactionResponse>> getTransactionHistory(
+    public ResponseEntity<PaginatedResponse<TransactionResponse>> getTransactionHistory(
             @PathVariable UUID walletId,
+            @RequestParam(required = false) EntryType type,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant endDate,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
         // Verify wallet ownership
         verifyWalletOwnership(walletId, userId);
 
-        // Limit max page size
-        int limit = Math.min(size, 50);
+        int limit = Math.min(size, 50); // limit max size to 50
+        int pageIndex = Math.max(page, 0); // ensure page is non-negative
 
-        List<TransactionResponse> transactions = getTransactionHistoryUseCase.execute(walletId, limit);
-        return ResponseEntity.ok(transactions);
+        PaginatedResponse<TransactionResponse> response = getTransactionHistoryUseCase
+                .execute(walletId, type, startDate, endDate, pageIndex, limit);
+        
+        return ResponseEntity.ok(response);
     }
 
     /**

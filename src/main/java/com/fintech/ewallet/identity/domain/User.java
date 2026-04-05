@@ -19,6 +19,11 @@ public class User {
     private String fullName;
     private String passwordHash; // BCrypt hash — never plain text
     private String email; // Optional
+    private String englishFullName;
+    private String gender;
+    private String dateOfBirth;
+    private String idNumber;
+    private String maritalStatus;
     private KycStatus kycStatus;
     private AccountStatus accountStatus;
     private UserRole role;
@@ -44,13 +49,19 @@ public class User {
      */
     public static User createNew(String phoneNumber, String fullName,
             String passwordHash, String email,
-            String language, String referralCode) {
+            String language, String referralCode,
+            String englishFullName, String gender, String dateOfBirth, String idNumber, String maritalStatus) {
         User user = new User();
         user.id = UUID.randomUUID();
         user.phoneNumber = phoneNumber;
         user.fullName = fullName;
         user.passwordHash = passwordHash;
         user.email = email;
+        user.englishFullName = englishFullName;
+        user.gender = gender;
+        user.dateOfBirth = dateOfBirth;
+        user.idNumber = idNumber;
+        user.maritalStatus = maritalStatus;
         user.kycStatus = KycStatus.NONE;
         user.accountStatus = AccountStatus.ACTIVE;
         user.role = UserRole.USER;
@@ -255,4 +266,15 @@ public class User {
     public void setDeletedAt(Instant deletedAt) {
         this.deletedAt = deletedAt;
     }
+
+    public String getEnglishFullName() { return englishFullName; }
+    public void setEnglishFullName(String englishFullName) { this.englishFullName = englishFullName; }
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+    public String getDateOfBirth() { return dateOfBirth; }
+    public void setDateOfBirth(String dateOfBirth) { this.dateOfBirth = dateOfBirth; }
+    public String getIdNumber() { return idNumber; }
+    public void setIdNumber(String idNumber) { this.idNumber = idNumber; }
+    public String getMaritalStatus() { return maritalStatus; }
+    public void setMaritalStatus(String maritalStatus) { this.maritalStatus = maritalStatus; }
 }

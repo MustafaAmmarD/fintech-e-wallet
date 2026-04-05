@@ -20,6 +20,7 @@ public class LedgerEntryMapper {
                 entity.getReferenceType(),
                 entity.getReferenceId(),
                 entity.getDescription(),
+                entity.getDescriptionAr(),
                 entity.getCreatedAt());
     }
 
@@ -37,6 +38,7 @@ public class LedgerEntryMapper {
                 ledgerEntry.getReferenceType(),
                 ledgerEntry.getReferenceId(),
                 ledgerEntry.getDescription(),
+                ledgerEntry.getDescriptionAr(),
                 ledgerEntry.getCreatedAt());
     }
 }

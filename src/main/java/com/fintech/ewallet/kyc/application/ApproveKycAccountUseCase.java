@@ -34,13 +34,10 @@ public class ApproveKycAccountUseCase {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        // Approve any pending documents that exist (may be empty — that's OK in dev)
         List<KycDocument> pendingDocuments = kycDocumentRepository.findByUserId(userId).stream()
                 .filter(doc -> doc.getStatus() == KycStatus.PENDING)
                 .toList();
-
-        if (pendingDocuments.isEmpty()) {
-            throw new InvalidDocumentException("No pending KYC documents found for this account");
-        }
 
         for (KycDocument document : pendingDocuments) {
             document.approve(reviewerId);

@@ -20,6 +20,28 @@ public interface LedgerEntryJpaRepository extends JpaRepository<LedgerEntryJpaEn
 
     List<LedgerEntryJpaEntity> findByWalletIdOrderByCreatedAtDesc(UUID walletId, Pageable pageable);
 
+    @Query("SELECT e FROM LedgerEntryJpaEntity e WHERE e.walletId = :walletId " +
+           "AND (:type IS NULL OR e.entryType = :type) " +
+           "AND (cast(:startDate as timestamp) IS NULL OR e.createdAt >= :startDate) " +
+           "AND (cast(:endDate as timestamp) IS NULL OR e.createdAt <= :endDate) " +
+           "ORDER BY e.createdAt DESC")
+    List<LedgerEntryJpaEntity> findByWalletIdWithFilters(
+            @Param("walletId") UUID walletId,
+            @Param("type") EntryType type,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate,
+            Pageable pageable);
+
+    @Query("SELECT COUNT(e) FROM LedgerEntryJpaEntity e WHERE e.walletId = :walletId " +
+           "AND (:type IS NULL OR e.entryType = :type) " +
+           "AND (cast(:startDate as timestamp) IS NULL OR e.createdAt >= :startDate) " +
+           "AND (cast(:endDate as timestamp) IS NULL OR e.createdAt <= :endDate)")
+    long countByWalletIdWithFilters(
+            @Param("walletId") UUID walletId,
+            @Param("type") EntryType type,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate);
+
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM LedgerEntryJpaEntity e " +
             "WHERE e.walletId = :walletId " +
             "AND e.entryType = :entryType " +

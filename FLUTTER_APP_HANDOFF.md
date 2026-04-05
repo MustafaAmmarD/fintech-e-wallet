@@ -137,6 +137,7 @@ Below is every endpoint the backend exposes, grouped by feature area. All paths 
 | PATCH  | `/settings` | Yes (USER)    | Update privacy settings.                                       |
 
 ### 10. Device Management (`/api/v1/devices`)
+*(⚠️ DEV NOTE: The exact OTP verification flow `[OTP_VERIFICATION_REQUIRED]` is currently disabled in the local `dev` profile to speed up flutter development. Any new deviceId sent to `/login` is automatically trusted without requiring `/request-otp`. Toggle `app.security.device-binding.enabled` to true in `application-dev.yml` if you specifically want to test the OTP flow locally).*
 
 | Method | Endpoint       | Auth Required | Description                              |
 | ------ | -------------- | ------------- | ---------------------------------------- |

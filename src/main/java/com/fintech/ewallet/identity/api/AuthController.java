@@ -1,6 +1,8 @@
 package com.fintech.ewallet.identity.api;
 
 import com.fintech.ewallet.identity.application.ChangePasswordUseCase;
+import com.fintech.ewallet.identity.application.GetUserProfileUseCase;
+import com.fintech.ewallet.identity.application.dto.UserProfileResponse;
 import com.fintech.ewallet.identity.application.LoginUseCase;
 import com.fintech.ewallet.identity.application.LogoutUseCase;
 import com.fintech.ewallet.identity.application.RefreshTokenUseCase;
@@ -35,6 +37,16 @@ public class AuthController {
     private final RefreshTokenUseCase refreshTokenUseCase;
     private final LogoutUseCase logoutUseCase;
     private final ChangePasswordUseCase changePasswordUseCase;
+    private final GetUserProfileUseCase getUserProfileUseCase;
+
+    /**
+     * Get the authenticated user's own full profile.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<UserProfileResponse> getMyProfile(
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId) {
+        return ResponseEntity.ok(getUserProfileUseCase.execute(userId));
+    }
 
     /**
      * Register a new user.

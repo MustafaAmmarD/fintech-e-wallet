@@ -46,7 +46,8 @@ public class AgentDepositUseCase {
             throw new IllegalStateException("Recipient wallet is not active");
         }
 
-        String description = normalizeDescription(request.description());
+        String description = normalizeDescription(request.description(), "Agent cash deposit");
+        String descriptionAr = normalizeDescription(request.description(), "إيداع نقدي عبر الوكيل");
 
         Deposit deposit = new Deposit(
                 recipient.getId(),
@@ -64,7 +65,8 @@ public class AgentDepositUseCase {
                 request.amount(),
                 ReferenceType.DEPOSIT,
                 deposit.getId(),
-                description);
+                description,
+                descriptionAr);
 
         Deposit savedDeposit = depositRepository.save(deposit);
 
@@ -78,9 +80,9 @@ public class AgentDepositUseCase {
                 savedDeposit.getCreatedAt());
     }
 
-    private String normalizeDescription(String description) {
+    private String normalizeDescription(String description, String defaultValue) {
         if (description == null || description.trim().isEmpty()) {
-            return "Agent cash deposit";
+            return defaultValue;
         }
         return description.trim();
     }

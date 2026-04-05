@@ -34,7 +34,8 @@ public class TransferMoneyUseCase {
         validateTransferTarget(toWallet);
 
         UUID referenceId = UUID.randomUUID();
-        String description = normalizeDescription(request.description());
+        String description = normalizeDescription(request.description(), "Wallet transfer");
+        String descriptionAr = normalizeDescription(request.description(), "حوالة مالية");
 
         UUID transactionId = recordLedgerEntryUseCase.recordDoubleEntry(
                 request.fromWalletId(),
@@ -42,7 +43,8 @@ public class TransferMoneyUseCase {
                 request.amount(),
                 ReferenceType.TRANSFER,
                 referenceId,
-                description);
+                description,
+                descriptionAr);
 
         return new TransferResponse(
                 transactionId,
@@ -71,9 +73,9 @@ public class TransferMoneyUseCase {
         }
     }
 
-    private String normalizeDescription(String description) {
+    private String normalizeDescription(String description, String defaultValue) {
         if (description == null || description.trim().isEmpty()) {
-            return "Wallet transfer";
+            return defaultValue;
         }
         return description.trim();
     }

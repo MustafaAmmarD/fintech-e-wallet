@@ -79,7 +79,8 @@ public class ExecuteTransferUseCase {
         UUID feeWalletId = SystemWallets.getFeeWallet(request.currency());
 
         // 10. Normalize description
-        String description = normalizeDescription(request.description());
+        String description = normalizeDescription(request.description(), "P2P Transfer");
+        String descriptionAr = normalizeDescription(request.description(), "حوالة من شخص لشخص");
 
         // 11. Execute the transfer via ledger (triple-entry: debit sender, credit
         // recipient, credit fee wallet)
@@ -90,7 +91,8 @@ public class ExecuteTransferUseCase {
                 request.amount(),
                 feeWalletId,
                 feeAmount, com.fintech.ewallet.wallet.domain.ReferenceType.TRANSFER, referenceId,
-                description);
+                description,
+                descriptionAr);
 
         log.info("Transfer executed: sender={}, recipient={}, amount={} {}, fee={}, transactionId={}",
                 senderUserId, recipient.getId(), request.amount(), request.currency(), feeAmount, transactionId);
@@ -122,11 +124,10 @@ public class ExecuteTransferUseCase {
                 savedTransfer.getCompletedAt());
     }
 
-    private String normalizeDescription(String description) {
+    private String normalizeDescription(String description, String defaultValue) {
         if (description == null || description.trim().isEmpty()) {
-            return "P2P Transfer";
+            return defaultValue;
         }
         return description.trim();
     }
 }
-

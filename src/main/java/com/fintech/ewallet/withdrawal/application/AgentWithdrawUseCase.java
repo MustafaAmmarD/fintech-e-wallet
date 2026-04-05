@@ -46,7 +46,8 @@ public class AgentWithdrawUseCase {
             throw new IllegalStateException("User wallet is not active");
         }
 
-        String description = normalizeDescription(request.description());
+        String description = normalizeDescription(request.description(), "Agent cash withdrawal");
+        String descriptionAr = normalizeDescription(request.description(), "سحب نقدي عبر الوكيل");
 
         Withdrawal withdrawal = new Withdrawal(
                 user.getId(),
@@ -64,7 +65,8 @@ public class AgentWithdrawUseCase {
                 request.amount(),
                 ReferenceType.WITHDRAWAL,
                 withdrawal.getId(),
-                description);
+                description,
+                descriptionAr);
 
         Withdrawal savedWithdrawal = withdrawalRepository.save(withdrawal);
 
@@ -78,9 +80,9 @@ public class AgentWithdrawUseCase {
                 savedWithdrawal.getCreatedAt());
     }
 
-    private String normalizeDescription(String description) {
+    private String normalizeDescription(String description, String defaultValue) {
         if (description == null || description.trim().isEmpty()) {
-            return "Agent cash withdrawal";
+            return defaultValue;
         }
         return description.trim();
     }

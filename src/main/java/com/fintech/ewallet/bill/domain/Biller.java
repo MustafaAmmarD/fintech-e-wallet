@@ -16,6 +16,7 @@ public class Biller {
     private UUID id;
     private String code;
     private String name;
+    private String nameAr;
     private BillerCategory category;
     private String supportedCurrency;
     private UUID walletId;

@@ -20,6 +20,12 @@ public record RegisterRequest(
 
         String language, // Optional, defaults to "ar"
 
-        @Size(max = 20, message = "Referral code must not exceed 20 characters") String referralCode // Optional
+        @Size(max = 20, message = "Referral code must not exceed 20 characters") String referralCode, // Optional
+
+        String englishFullName,
+        String gender,
+        String dateOfBirth,
+        String idNumber,
+        String maritalStatus
 ) {
 }

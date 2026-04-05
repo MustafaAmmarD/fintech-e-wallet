@@ -105,7 +105,7 @@ class ExecuteTransferUseCaseTest {
         // Ledger entry returns a transaction ID
         when(recordLedgerEntryUseCase.recordTransferWithFee(
                 eq(senderWallet.getId()), eq(recipientWallet.getId()), eq(new BigDecimal("1000")),
-                any(), eq(feeAmount), any(), any(), eq("Test transfer")))
+                any(), eq(feeAmount), any(), any(), eq("Test transfer"), any()))
                 .thenReturn(transactionId);
 
         // Transfer saving Mock
@@ -128,7 +128,7 @@ class ExecuteTransferUseCaseTest {
 
         // Verify that the ledger and repository were actually called exactly once
         verify(recordLedgerEntryUseCase, times(1)).recordTransferWithFee(any(), any(), any(), any(), any(), any(),
-                any(), any());
+                any(), any(), any());
         verify(transferRepository, times(1)).save(any(P2PTransfer.class));
     }
 
@@ -150,7 +150,7 @@ class ExecuteTransferUseCaseTest {
         assertEquals("Cannot transfer to yourself", ex.getMessage());
         // Verify ledger was NEVER called
         verify(recordLedgerEntryUseCase, never()).recordTransferWithFee(any(), any(), any(), any(), any(), any(), any(),
-                any());
+                any(), any());
     }
 
     // ========================================================================

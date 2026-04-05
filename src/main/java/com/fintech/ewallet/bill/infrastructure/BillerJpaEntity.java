@@ -29,6 +29,9 @@ public class BillerJpaEntity {
     @Column(nullable = false)
     private String name;
 
+    @Column(name = "name_ar")
+    private String nameAr;
+
     @Column(nullable = false)
     private String category;
 

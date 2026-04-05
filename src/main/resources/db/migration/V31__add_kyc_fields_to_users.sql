@@ -1,0 +1,5 @@
+ALTER TABLE users ADD COLUMN english_full_name VARCHAR(100);
+ALTER TABLE users ADD COLUMN gender VARCHAR(10);
+ALTER TABLE users ADD COLUMN date_of_birth VARCHAR(20);
+ALTER TABLE users ADD COLUMN id_number VARCHAR(50);
+ALTER TABLE users ADD COLUMN marital_status VARCHAR(20);

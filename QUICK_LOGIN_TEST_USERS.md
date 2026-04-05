@@ -141,3 +141,15 @@ Login body:
 }
 
 731131009
+
+
+
+
+
+
+
+
+
+
+
+Get-Process -Name java | Stop-Process -Force

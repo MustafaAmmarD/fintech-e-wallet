@@ -35,6 +35,21 @@ public class UserJpaEntity {
     @Column(name = "email")
     private String email;
 
+    @Column(name = "english_full_name", length = 100)
+    private String englishFullName;
+
+    @Column(name = "gender", length = 10)
+    private String gender;
+
+    @Column(name = "date_of_birth", length = 20)
+    private String dateOfBirth;
+
+    @Column(name = "id_number", length = 50)
+    private String idNumber;
+
+    @Column(name = "marital_status", length = 20)
+    private String maritalStatus;
+
     @Column(name = "kyc_status", nullable = false, length = 20)
     private String kycStatus;
 

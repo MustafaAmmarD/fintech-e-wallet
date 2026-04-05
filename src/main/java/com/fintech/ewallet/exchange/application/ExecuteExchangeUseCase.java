@@ -112,7 +112,8 @@ public class ExecuteExchangeUseCase {
                     quote.getToAmount(),
                     quote.getFeeAmount(),
                     quote.getId(),
-                    "Currency exchange " + quote.getFromCurrency() + " -> " + quote.getToCurrency());
+                    "Currency exchange " + quote.getFromCurrency() + " -> " + quote.getToCurrency(),
+                    "تصريف عملات " + quote.getFromCurrency() + " -> " + quote.getToCurrency());
         } catch (RuntimeException ex) {
             recordFailedExchangeUseCase.execute(quote, currentRate.getRate(), slippageBps);
             throw ex;

@@ -96,6 +96,9 @@ public class LoginUseCase {
                         user.getKycStatus().name()));
     }
 
+    @org.springframework.beans.factory.annotation.Value("${app.security.device-binding.enabled:true}")
+    private boolean deviceBindingEnabled;
+
     /**
      * Resolve trusted device for login.
      * New devices must be OTP-verified before they become trusted.
@@ -114,6 +117,19 @@ public class LoginUseCase {
                     return deviceRepository.save(existingDevice);
                 })
                 .orElseGet(() -> {
+                    if (!deviceBindingEnabled) {
+                        log.info("Device binding is disabled in dev. Auto-trusting device {} for user {}", deviceId, user.getId());
+                        TrustedDevice newDevice = TrustedDevice.create(
+                                user.getId(),
+                                deviceId,
+                                "auto_fingerprint_" + deviceId,
+                                request.deviceName(),
+                                httpRequest.getHeader("User-Agent"),
+                                httpRequest.getRemoteAddr(),
+                                false);
+                        return deviceRepository.save(newDevice);
+                    }
+
                     // New device: enforce OTP before trust
                     long deviceCount = deviceRepository.countByUserId(user.getId());
                     if (deviceCount >= MAX_DEVICES_PER_USER) {
