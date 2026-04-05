@@ -24,6 +24,10 @@ spring:
   docker:
     compose:
       enabled: false
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+      timeout: 2000ms
 
 jwt:
   secret: ${JWT_SECRET}
