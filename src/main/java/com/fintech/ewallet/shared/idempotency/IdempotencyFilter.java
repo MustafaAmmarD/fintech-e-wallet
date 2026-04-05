@@ -75,7 +75,15 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         String requestHash = computeRequestHash(cachedRequest);
         String deduplicationKey = buildDeduplicationKey(userScope, cachedRequest, idempotencyKey.trim());
 
-        Optional<IdempotencyStoredResponse> cachedResponse = idempotencyStore.findResponse(deduplicationKey);
+        Optional<IdempotencyStoredResponse> cachedResponse = Optional.empty();
+        try {
+            cachedResponse = idempotencyStore.findResponse(deduplicationKey);
+        } catch (Exception ex) {
+            log.error("Idempotency store error (findResponse) for key={} path={}: {}", 
+                idempotencyKey, cachedRequest.getRequestURI(), ex.getMessage());
+            // Proceed without idempotency if store is down
+        }
+
         if (cachedResponse.isPresent()) {
             IdempotencyStoredResponse storedResponse = cachedResponse.get();
             if (!storedResponse.requestHash().equals(requestHash)) {
@@ -88,7 +96,17 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (!idempotencyStore.tryAcquireLock(deduplicationKey, LOCK_TTL)) {
+        boolean lockAcquired = false;
+        try {
+            lockAcquired = idempotencyStore.tryAcquireLock(deduplicationKey, LOCK_TTL);
+        } catch (Exception ex) {
+            log.error("Idempotency store error (tryAcquireLock) for key={} path={}: {}", 
+                idempotencyKey, cachedRequest.getRequestURI(), ex.getMessage());
+            // Assume lock acquired to proceed if store is down (best effort)
+            lockAcquired = true;
+        }
+
+        if (!lockAcquired) {
             writeDomainExceptionResponse(response, request, new IdempotencyRequestInProgressException());
             return;
         }
