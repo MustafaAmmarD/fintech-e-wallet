@@ -5,18 +5,22 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * P2PTransfer domain entity — represents a completed or reversed money transfer
- * between two user wallets. Links to the underlying ledger entries via
- * transactionId.
+ * P2PTransfer domain entity — represents a completed, pending, or reversed money transfer
+ * between two user wallets, or involving external/unregistered users.
  */
 public class P2PTransfer {
 
     private final UUID id;
     private final String referenceNo;
-    private final UUID senderUserId;
-    private final UUID senderWalletId;
-    private final UUID recipientUserId;
-    private final UUID recipientWalletId;
+    private UUID senderUserId;
+    private UUID senderWalletId;
+    private UUID recipientUserId;
+    private UUID recipientWalletId;
+    
+    private final String senderPhoneNumber;
+    private final String targetPhoneNumber;
+    private String cancelReason;
+
     private final BigDecimal amount;
     private final BigDecimal feeAmount;
     private final BigDecimal totalDeducted;
@@ -27,7 +31,7 @@ public class P2PTransfer {
     private final Instant createdAt;
     private Instant completedAt;
 
-    // Constructor for new transfer
+    // Standard constructor for new completed transfer (existing logic)
     public P2PTransfer(
             UUID senderUserId,
             UUID senderWalletId,
@@ -44,6 +48,9 @@ public class P2PTransfer {
         this.senderWalletId = senderWalletId;
         this.recipientUserId = recipientUserId;
         this.recipientWalletId = recipientWalletId;
+        this.senderPhoneNumber = null;
+        this.targetPhoneNumber = null;
+        this.cancelReason = null;
         this.amount = amount;
         this.feeAmount = feeAmount;
         this.totalDeducted = amount.add(feeAmount);
@@ -54,6 +61,44 @@ public class P2PTransfer {
         this.createdAt = Instant.now();
         this.completedAt = Instant.now();
     }
+    
+    // Constructor for new pending/external transfer
+    public P2PTransfer(
+            UUID senderUserId,
+            UUID senderWalletId,
+            String senderPhoneNumber,
+            UUID recipientUserId,
+            UUID recipientWalletId,
+            String targetPhoneNumber,
+            BigDecimal amount,
+            BigDecimal feeAmount,
+            Currency currency,
+            String description,
+            UUID transactionId,
+            TransferStatus initialStatus) {
+        this.id = UUID.randomUUID();
+        this.referenceNo = generateReferenceNo();
+        this.senderUserId = senderUserId;
+        this.senderWalletId = senderWalletId;
+        this.senderPhoneNumber = senderPhoneNumber;
+        this.recipientUserId = recipientUserId;
+        this.recipientWalletId = recipientWalletId;
+        this.targetPhoneNumber = targetPhoneNumber;
+        this.cancelReason = null;
+        this.amount = amount;
+        this.feeAmount = feeAmount;
+        this.totalDeducted = amount.add(feeAmount);
+        this.currency = currency;
+        this.status = initialStatus;
+        this.description = description;
+        this.transactionId = transactionId;
+        this.createdAt = Instant.now();
+        if (initialStatus == TransferStatus.COMPLETED) {
+            this.completedAt = Instant.now();
+        } else {
+            this.completedAt = null;
+        }
+    }
 
     // Reconstruct from DB
     public P2PTransfer(
@@ -61,8 +106,11 @@ public class P2PTransfer {
             String referenceNo,
             UUID senderUserId,
             UUID senderWalletId,
+            String senderPhoneNumber,
             UUID recipientUserId,
             UUID recipientWalletId,
+            String targetPhoneNumber,
+            String cancelReason,
             BigDecimal amount,
             BigDecimal feeAmount,
             BigDecimal totalDeducted,
@@ -76,8 +124,11 @@ public class P2PTransfer {
         this.referenceNo = referenceNo;
         this.senderUserId = senderUserId;
         this.senderWalletId = senderWalletId;
+        this.senderPhoneNumber = senderPhoneNumber;
         this.recipientUserId = recipientUserId;
         this.recipientWalletId = recipientWalletId;
+        this.targetPhoneNumber = targetPhoneNumber;
+        this.cancelReason = cancelReason;
         this.amount = amount;
         this.feeAmount = feeAmount;
         this.totalDeducted = totalDeducted;
@@ -96,6 +147,25 @@ public class P2PTransfer {
             throw new IllegalStateException("Only completed transfers can be reversed");
         }
         this.status = TransferStatus.REVERSED;
+    }
+    
+    public void receive(UUID recipientUserId, UUID recipientWalletId) {
+        if (this.status != TransferStatus.PENDING && this.status != TransferStatus.UNCLAIMED) {
+            throw new IllegalStateException("Transfer is not in a receivable state");
+        }
+        this.recipientUserId = recipientUserId;
+        this.recipientWalletId = recipientWalletId;
+        this.status = TransferStatus.COMPLETED;
+        this.completedAt = Instant.now();
+    }
+    
+    public void cancel(String reason) {
+        if (this.status != TransferStatus.PENDING && this.status != TransferStatus.UNCLAIMED) {
+            throw new IllegalStateException("Transfer is not in a cancellable state");
+        }
+        this.status = TransferStatus.CANCELLED;
+        this.cancelReason = reason;
+        this.completedAt = Instant.now();
     }
 
     // Getters
@@ -116,12 +186,24 @@ public class P2PTransfer {
         return senderWalletId;
     }
 
+    public String getSenderPhoneNumber() {
+        return senderPhoneNumber;
+    }
+
     public UUID getRecipientUserId() {
         return recipientUserId;
     }
 
     public UUID getRecipientWalletId() {
         return recipientWalletId;
+    }
+
+    public String getTargetPhoneNumber() {
+        return targetPhoneNumber;
+    }
+    
+    public String getCancelReason() {
+        return cancelReason;
     }
 
     public BigDecimal getAmount() {

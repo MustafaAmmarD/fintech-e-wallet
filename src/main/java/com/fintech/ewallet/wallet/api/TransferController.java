@@ -1,9 +1,11 @@
 package com.fintech.ewallet.wallet.api;
 
+import com.fintech.ewallet.wallet.application.CancelTransferUseCase;
 import com.fintech.ewallet.wallet.application.ExecuteTransferUseCase;
 import com.fintech.ewallet.wallet.application.GetTransferDetailUseCase;
 import com.fintech.ewallet.wallet.application.GetTransferHistoryUseCase;
 import com.fintech.ewallet.wallet.application.PreviewTransferUseCase;
+import com.fintech.ewallet.wallet.application.ReceiveTransferUseCase;
 import com.fintech.ewallet.wallet.application.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -31,6 +33,8 @@ public class TransferController {
     private final ExecuteTransferUseCase executeTransferUseCase;
     private final GetTransferDetailUseCase getTransferDetailUseCase;
     private final GetTransferHistoryUseCase getTransferHistoryUseCase;
+    private final ReceiveTransferUseCase receiveTransferUseCase;
+    private final CancelTransferUseCase cancelTransferUseCase;
 
     /**
      * POST /api/v1/transfers/preview
@@ -88,5 +92,37 @@ public class TransferController {
             @RequestParam(defaultValue = "20") int limit) {
         List<TransferDetailResponse> history = getTransferHistoryUseCase.execute(userId, limit);
         return ResponseEntity.ok(history);
+    }
+
+    /**
+     * POST /api/v1/transfers/receive
+     * Claim a pending transfer using its transfer number and process number.
+     */
+    @PostMapping("/receive")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(summary = "Receive a pending transfer", description = "Claim a pending transfer using its transfer number.")
+    public ResponseEntity<Void> receive(
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId,
+            @Parameter(name = "Idempotency-Key", required = true, description = "Unique key to prevent duplicate requests")
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody ReceiveTransferRequest request) {
+        receiveTransferUseCase.execute(userId, request);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * POST /api/v1/transfers/cancel
+     * Cancel a pending transfer that the user sent.
+     */
+    @PostMapping("/cancel")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(summary = "Cancel a pending transfer", description = "Cancel a pending transfer that has not been claimed yet.")
+    public ResponseEntity<Void> cancel(
+            @Parameter(hidden = true) @AuthenticationPrincipal UUID userId,
+            @Parameter(name = "Idempotency-Key", required = true, description = "Unique key to prevent duplicate requests")
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody CancelTransferRequest request) {
+        cancelTransferUseCase.execute(userId, request);
+        return ResponseEntity.ok().build();
     }
 }

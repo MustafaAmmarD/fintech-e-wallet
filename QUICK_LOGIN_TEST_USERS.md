@@ -1,3 +1,4 @@
+-- Active: 1775276585305@@localhost@5432@ewallet_dev
 # Quick Login Test Users
 
 Use this file for fast copy/paste during Swagger or API testing.
@@ -31,7 +32,7 @@ docker compose up -d
 
 Login body:
 
-```json
+```json 
 {
   "phoneNumber": "+967770900001",
   "password": "Password123!",

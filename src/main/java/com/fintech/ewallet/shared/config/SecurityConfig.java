@@ -42,15 +42,18 @@ public class SecurityConfig {
                                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                                 .csrf(AbstractHttpConfigurer::disable) // API-only, no CSRF needed
                                 .headers(headers -> headers
-                                                .frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin) // Allow
-                                                                                                                // H2
-                                                                                                                // console
-                                                                                                                // frames
+                                                .frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin) // Allow H2 console frames
                                 )
                                 .sessionManagement(session -> session
-                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // No server
-                                                                                                        // sessions
+                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // No server sessions
                                 )
+                                .exceptionHandling(exceptions -> exceptions
+                                                .authenticationEntryPoint((request, response, authException) -> {
+                                                        response.sendError(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED, authException.getMessage());
+                                                })
+                                )
+                                .formLogin(AbstractHttpConfigurer::disable)
+                                .httpBasic(AbstractHttpConfigurer::disable)
                                 .authorizeHttpRequests(auth -> auth
                                                 // Public endpoints
                                                 .requestMatchers(
@@ -60,9 +63,18 @@ public class SecurityConfig {
                                                                 "/api/v1/devices/request-otp",
                                                                 "/api/v1/devices/verify-otp",
                                                                 "/swagger-ui.html",
+                                                                "/swagger-ui",
                                                                 "/swagger-ui/**",
+                                                                "/v3/api-docs",
                                                                 "/v3/api-docs/**",
+                                                                "/api-docs",
                                                                 "/api-docs/**",
+                                                                "/swagger-resources",
+                                                                "/swagger-resources/**",
+                                                                "/configuration/ui",
+                                                                "/configuration/security",
+                                                                "/webjars/**",
+                                                                "/error",
                                                                 "/actuator/health",
                                                                 "/h2-console/**")
                                                 .permitAll()

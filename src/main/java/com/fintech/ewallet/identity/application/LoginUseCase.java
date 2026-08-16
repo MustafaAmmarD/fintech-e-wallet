@@ -93,7 +93,8 @@ public class LoginUseCase {
                         user.getId(),
                         user.getFullName(),
                         user.getPhoneNumber(),
-                        user.getKycStatus().name()));
+                        user.getKycStatus().name(),
+                        user.getRole().name()));
     }
 
     @org.springframework.beans.factory.annotation.Value("${app.security.device-binding.enabled:true}")

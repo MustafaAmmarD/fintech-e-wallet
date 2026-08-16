@@ -82,7 +82,7 @@ class ExecuteTransferUseCaseTest {
         senderWallet = new Wallet(senderId, Currency.YER);
         recipientWallet = new Wallet(recipientId, Currency.YER);
 
-        request = new ExecuteTransferRequest("222222222", new BigDecimal("1000"), Currency.YER, "Test transfer");
+        request = new ExecuteTransferRequest("222222222", null, new BigDecimal("1000"), Currency.YER, "Test transfer");
     }
 
     // ========================================================================

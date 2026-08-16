@@ -19,6 +19,7 @@ public record LoginResponse(
             UUID id,
             String fullName,
             String phoneNumber,
-            String kycStatus) {
+            String kycStatus,
+            String role) {
     }
 }

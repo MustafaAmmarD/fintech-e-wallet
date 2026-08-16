@@ -22,17 +22,26 @@ public class TransferJpaEntity {
     @Column(name = "reference_no", nullable = false, unique = true, length = 20)
     private String referenceNo;
 
-    @Column(name = "sender_user_id", nullable = false)
+    @Column(name = "sender_user_id", nullable = true)
     private UUID senderUserId;
 
-    @Column(name = "sender_wallet_id", nullable = false)
+    @Column(name = "sender_wallet_id", nullable = true)
     private UUID senderWalletId;
+    
+    @Column(name = "sender_phone_number", nullable = true, length = 20)
+    private String senderPhoneNumber;
 
-    @Column(name = "recipient_user_id", nullable = false)
+    @Column(name = "recipient_user_id", nullable = true)
     private UUID recipientUserId;
 
-    @Column(name = "recipient_wallet_id", nullable = false)
+    @Column(name = "recipient_wallet_id", nullable = true)
     private UUID recipientWalletId;
+    
+    @Column(name = "target_phone_number", nullable = true, length = 20)
+    private String targetPhoneNumber;
+    
+    @Column(name = "cancel_reason", nullable = true, length = 255)
+    private String cancelReason;
 
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal amount;

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -35,17 +36,39 @@ public class ExecuteTransferUseCase {
 
     @Transactional
     public ExecuteTransferResponse execute(UUID senderUserId, ExecuteTransferRequest request) {
+        if ((request.recipientAccountNumber() == null || request.recipientAccountNumber().trim().isEmpty()) &&
+            (request.targetPhoneNumber() == null || request.targetPhoneNumber().trim().isEmpty())) {
+            throw new IllegalArgumentException("Either recipient account number or target phone number must be provided");
+        }
+
         // 1. Look up sender
         User sender = userRepository.findById(senderUserId)
                 .orElseThrow(() -> new IllegalArgumentException("Sender user not found"));
 
-        // 2. Look up recipient by account number
-        User recipient = userRepository.findByAccountNumber(request.recipientAccountNumber())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No user found with account number: " + request.recipientAccountNumber()));
+        // 2. Look up recipient
+        User recipient = null;
+        String fallbackPhone = null;
+
+        if (request.recipientAccountNumber() != null && !request.recipientAccountNumber().trim().isEmpty()) {
+            String input = request.recipientAccountNumber().trim();
+            Optional<User> byAccount = userRepository.findByAccountNumber(input);
+            if (byAccount.isPresent()) {
+                recipient = byAccount.get();
+            } else {
+                // Fallback: Flutter app might send a phone number in the account number field
+                String phoneStr = input.startsWith("+") ? input : "+967" + input;
+                recipient = userRepository.findByPhoneNumber(phoneStr).orElse(null);
+                if (recipient == null) fallbackPhone = phoneStr;
+            }
+        } else if (request.targetPhoneNumber() != null && !request.targetPhoneNumber().trim().isEmpty()) {
+            String phoneStr = request.targetPhoneNumber().trim();
+            phoneStr = phoneStr.startsWith("+") ? phoneStr : "+967" + phoneStr;
+            recipient = userRepository.findByPhoneNumber(phoneStr).orElse(null);
+            if (recipient == null) fallbackPhone = phoneStr;
+        }
 
         // 3. Prevent self-transfer
-        if (sender.getId().equals(recipient.getId())) {
+        if (recipient != null && sender.getId().equals(recipient.getId())) {
             throw new IllegalArgumentException("Cannot transfer to yourself");
         }
 
@@ -53,75 +76,111 @@ public class ExecuteTransferUseCase {
         Wallet senderWallet = walletRepository.findByUserIdAndCurrency(senderUserId, request.currency())
                 .orElseThrow(() -> new IllegalArgumentException("You don't have a " + request.currency() + " wallet"));
 
-        // 5. Find recipient's wallet for the same currency
-        Wallet recipientWallet = walletRepository.findByUserIdAndCurrency(recipient.getId(), request.currency())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Recipient doesn't have a " + request.currency() + " wallet"));
-
-        // 6. Validate wallets are active
+        // 5. Validate sender's wallet is active
         if (senderWallet.getStatus() != WalletStatus.ACTIVE) {
             throw new IllegalStateException("Your wallet is not active");
         }
-        if (recipientWallet.getStatus() != WalletStatus.ACTIVE) {
-            throw new IllegalStateException("Recipient's wallet is not active");
-        }
-
-        // 7. Cannot transfer from/to system wallets
-        if (SystemWallets.isSystemWallet(senderWallet.getId())
-                || SystemWallets.isSystemWallet(recipientWallet.getId())) {
+        if (SystemWallets.isSystemWallet(senderWallet.getId())) {
             throw new IllegalArgumentException("System wallets cannot be used in P2P transfers");
         }
 
-        // 8. Calculate fee
+        Wallet recipientWallet = null;
+        if (recipient != null) {
+            // Find recipient's wallet for the same currency
+            recipientWallet = walletRepository.findByUserIdAndCurrency(recipient.getId(), request.currency())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Recipient doesn't have a " + request.currency() + " wallet"));
+
+            if (recipientWallet.getStatus() != WalletStatus.ACTIVE) {
+                throw new IllegalStateException("Recipient's wallet is not active");
+            }
+            if (SystemWallets.isSystemWallet(recipientWallet.getId())) {
+                throw new IllegalArgumentException("System wallets cannot be used in P2P transfers");
+            }
+        }
+
+        // 6. Calculate fee
         BigDecimal feeAmount = calculateFeeUseCase.execute(FeeOperation.TRANSFER, request.currency(), request.amount());
 
-        // 9. Get fee wallet for the currency
+        // 7. Get fee wallet for the currency
         UUID feeWalletId = SystemWallets.getFeeWallet(request.currency());
 
-        // 10. Normalize description
+        // 8. Normalize description
         String description = normalizeDescription(request.description(), "P2P Transfer");
         String descriptionAr = normalizeDescription(request.description(), "حوالة من شخص لشخص");
 
-        // 11. Execute the transfer via ledger (triple-entry: debit sender, credit
-        // recipient, credit fee wallet)
+        // 9. Execute the transfer via ledger
         UUID referenceId = UUID.randomUUID();
-        UUID transactionId = recordLedgerEntryUseCase.recordTransferWithFee(
+        UUID transactionId;
+        
+        UUID destinationWalletId;
+        if (recipientWallet != null) {
+            destinationWalletId = recipientWallet.getId();
+        } else {
+            // Pending transfer: send to liquidity wallet until claimed
+            destinationWalletId = SystemWallets.getLiquidityWallet(request.currency());
+            description = normalizeDescription(request.description(), "Pending Transfer");
+            descriptionAr = normalizeDescription(request.description(), "حوالة معلقة");
+        }
+
+        transactionId = recordLedgerEntryUseCase.recordTransferWithFee(
                 senderWallet.getId(),
-                recipientWallet.getId(),
+                destinationWalletId,
                 request.amount(),
                 feeWalletId,
-                feeAmount, com.fintech.ewallet.wallet.domain.ReferenceType.TRANSFER, referenceId,
+                feeAmount, 
+                com.fintech.ewallet.wallet.domain.ReferenceType.TRANSFER, 
+                referenceId,
                 description,
                 descriptionAr);
 
         log.info("Transfer executed: sender={}, recipient={}, amount={} {}, fee={}, transactionId={}",
-                senderUserId, recipient.getId(), request.amount(), request.currency(), feeAmount, transactionId);
+                senderUserId, recipient != null ? recipient.getId() : "PENDING", request.amount(), request.currency(), feeAmount, transactionId);
 
-        // 12. Record the transfer in the transfers table
-        P2PTransfer transfer = new P2PTransfer(
-                senderUserId,
-                senderWallet.getId(),
-                recipient.getId(),
-                recipientWallet.getId(),
-                request.amount(),
-                feeAmount,
-                request.currency(),
-                description,
-                transactionId);
+        // 10. Record the transfer in the transfers table
+        P2PTransfer transfer;
+        if (recipient != null) {
+            transfer = new P2PTransfer(
+                    senderUserId,
+                    senderWallet.getId(),
+                    recipient.getId(),
+                    recipientWallet.getId(),
+                    request.amount(),
+                    feeAmount,
+                    request.currency(),
+                    description,
+                    transactionId);
+        } else {
+            transfer = new P2PTransfer(
+                    senderUserId,
+                    senderWallet.getId(),
+                    sender.getPhoneNumber(),
+                    null,
+                    null,
+                    fallbackPhone,
+                    request.amount(),
+                    feeAmount,
+                    request.currency(),
+                    description,
+                    transactionId,
+                    TransferStatus.PENDING);
+        }
 
         P2PTransfer savedTransfer = transferRepository.save(transfer);
 
-        // 13. Return response
+        String displayName = recipient != null ? nameMaskingService.getDisplayName(recipient, senderUserId) : "Unregistered User (Pending Transfer)";
+
+        // 11. Return response
         return new ExecuteTransferResponse(
                 savedTransfer.getId(),
                 savedTransfer.getReferenceNo(),
-                nameMaskingService.getDisplayName(recipient, senderUserId),
+                displayName,
                 savedTransfer.getAmount(),
                 savedTransfer.getFeeAmount(),
                 savedTransfer.getTotalDeducted(),
                 savedTransfer.getCurrency(),
                 savedTransfer.getStatus(),
-                savedTransfer.getCompletedAt());
+                savedTransfer.getCompletedAt() != null ? savedTransfer.getCompletedAt() : savedTransfer.getCreatedAt());
     }
 
     private String normalizeDescription(String description, String defaultValue) {

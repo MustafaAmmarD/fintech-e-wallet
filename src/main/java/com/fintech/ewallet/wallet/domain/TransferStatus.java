@@ -6,5 +6,8 @@ package com.fintech.ewallet.wallet.domain;
 public enum TransferStatus {
     COMPLETED, // Successfully executed
     FAILED, // Failed during execution
-    REVERSED // Reversed after completion (compensating entries created)
+    REVERSED, // Reversed after completion (compensating entries created)
+    PENDING, // Waiting to be received/claimed
+    UNCLAIMED, // Has been waiting for a long time
+    CANCELLED // Cancelled before being claimed
 }
